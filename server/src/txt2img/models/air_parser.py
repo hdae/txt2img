@@ -22,11 +22,13 @@ class ModelEcosystem(str, Enum):
 
 
 class ModelType(str, Enum):
-    """Supported model types."""
+    """Common model types (not exhaustive, AIR allows any type)."""
 
     CHECKPOINT = "checkpoint"
     LORA = "lora"
     EMBEDDING = "embedding"
+    VAE = "vae"
+    CONTROLNET = "controlnet"
 
 
 class ModelSource(str, Enum):
@@ -40,8 +42,8 @@ class ModelSource(str, Enum):
 class AIRResource:
     """Parsed AIR URN resource."""
 
-    ecosystem: ModelEcosystem
-    type: ModelType
+    ecosystem: str  # e.g., sdxl, sd1, flux
+    type: str  # e.g., checkpoint, lora, vae, embedding
     source: ModelSource
     id: str
     version: str | None = None
@@ -81,11 +83,12 @@ class HuggingFaceResource:
 ModelRef = AIRResource | URLResource | HuggingFaceResource
 
 
-# AIR URN pattern
+# AIR URN pattern - relaxed to allow any ecosystem and type
+# Format: urn:air:{ecosystem}:{type}:{source}:{id}@{version?}.{format?}
 AIR_PATTERN = re.compile(
     r"^(?:urn:)?(?:air:)?"
-    r"(?P<ecosystem>sd1|sd2|sdxl|flux):"
-    r"(?P<type>checkpoint|lora|embedding):"
+    r"(?P<ecosystem>[\w-]+):"
+    r"(?P<type>[\w-]+):"
     r"(?P<source>civitai|huggingface):"
     r"(?P<id>[^@.]+)"
     r"(?:@(?P<version>[^.]+))?"
@@ -111,8 +114,8 @@ def parse_air_urn(urn: str) -> AIRResource:
         raise ValueError(f"Invalid AIR URN format: {urn}")
 
     return AIRResource(
-        ecosystem=ModelEcosystem(match.group("ecosystem").lower()),
-        type=ModelType(match.group("type").lower()),
+        ecosystem=match.group("ecosystem").lower(),
+        type=match.group("type").lower(),
         source=ModelSource(match.group("source").lower()),
         id=match.group("id"),
         version=match.group("version"),

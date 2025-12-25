@@ -48,7 +48,7 @@ echo ""
 echo "Starting txt2img server..."
 echo "Model: ${MODEL:-not set}"
 echo "Training Resolution: ${TRAINING_RESOLUTION:-1024}"
-echo "Prompt Parser: ${PROMPT_PARSER:-legacy}"
+echo "Prompt Parser: ${PROMPT_PARSER:-lpw}"
 echo ""
 
 cd "$SERVER_DIR"

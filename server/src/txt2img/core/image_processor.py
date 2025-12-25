@@ -106,14 +106,17 @@ def save_image(
     Returns:
         SavedImage with paths and info
     """
+    from txt2img.config import get_model_config
+
     settings = get_settings()
+    config = get_model_config()
 
     if image_id is None:
         image_id = generate_image_id()
 
     # Ensure output directory exists
-    output_dir = settings.output_dir / "full"
-    thumb_dir = settings.output_dir / "thumbnails"
+    output_dir = settings.output_dir / "images"
+    thumb_dir = settings.output_dir / "thumbs"
     output_dir.mkdir(parents=True, exist_ok=True)
     thumb_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,7 +125,7 @@ def save_image(
     pnginfo_str = metadata.to_pnginfo_string()
 
     # Save full size image
-    if settings.output_format == OutputFormat.PNG:
+    if config.output_format == OutputFormat.PNG:
         full_path = output_dir / f"{image_id}.png"
         pnginfo = PngInfo()
         pnginfo.add_text("parameters", pnginfo_str)
@@ -155,7 +158,7 @@ def save_image(
         id=image_id,
         full_path=full_path,
         thumbnail_path=thumb_path,
-        format=settings.output_format,
+        format=config.output_format,
         metadata=metadata,
     )
 

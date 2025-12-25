@@ -1,0 +1,15 @@
+{
+    "$schema": "./config.schema.json",
+    "type": "sdxl",
+    "model": "urn:air:sdxl:checkpoint:civitai:823763@1892440",
+    "vae": null,
+    "loras": [],
+    "quantization": "int4wo",
+    "vae_tiling": true,
+    "training_resolution": 1536,
+    "default_steps": 20,
+    "default_cfg": 7.0,
+    "default_sampler": "euler_a",
+    "output_format": "webp",
+    "prompt_parser": "compel"
+}

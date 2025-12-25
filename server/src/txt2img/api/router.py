@@ -76,35 +76,21 @@ async def get_images(
     )
 
 
-@router.get("/images/{image_id}")
-async def get_image(
-    image_id: str,
-    thumbnail: bool = Query(default=False),
-) -> FileResponse:
-    """Get image file.
+@router.get("/images/{image_id}.{ext}")
+async def get_image_with_ext(image_id: str, ext: str) -> FileResponse:
+    """Get full-size image file with extension.
 
     Args:
         image_id: Image ID
-        thumbnail: If true, return thumbnail instead of full image
+        ext: File extension (png, webp)
     """
     settings = get_settings()
 
-    if thumbnail:
-        file_path = settings.output_dir / "thumbnails" / f"{image_id}.webp"
-        media_type = "image/webp"
-    else:
-        # Try both formats
-        png_path = settings.output_dir / "full" / f"{image_id}.png"
-        webp_path = settings.output_dir / "full" / f"{image_id}.webp"
+    if ext not in ("png", "webp"):
+        raise HTTPException(status_code=400, detail="Invalid extension")
 
-        if png_path.exists():
-            file_path = png_path
-            media_type = "image/png"
-        elif webp_path.exists():
-            file_path = webp_path
-            media_type = "image/webp"
-        else:
-            raise HTTPException(status_code=404, detail="Image not found")
+    file_path = settings.output_dir / "images" / f"{image_id}.{ext}"
+    media_type = f"image/{ext}"
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Image not found")
@@ -116,12 +102,36 @@ async def get_image(
     )
 
 
+@router.get("/thumbs/{image_id}.webp")
+async def get_thumbnail(image_id: str) -> FileResponse:
+    """Get thumbnail image (always WebP).
+
+    Args:
+        image_id: Image ID
+    """
+    settings = get_settings()
+
+    file_path = settings.output_dir / "thumbs" / f"{image_id}.webp"
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+
+    return FileResponse(
+        path=file_path,
+        media_type="image/webp",
+        filename=file_path.name,
+    )
+
+
 @router.get("/info", response_model=ServerInfo)
 async def get_server_info() -> ServerInfo:
-    """Get server information including model name and training resolution."""
-    settings = get_settings()
+    """Get server information including model name, training resolution, and prompt parser."""
+    from txt2img.config import get_model_config
+
+    config = get_model_config()
 
     return ServerInfo(
         model_name=pipeline.model_name or "Not loaded",
-        training_resolution=settings.training_resolution,
+        training_resolution=str(config.training_resolution),
+        prompt_parser=config.prompt_parser.value,
     )

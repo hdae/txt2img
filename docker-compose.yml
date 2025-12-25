@@ -13,18 +13,15 @@ services:
       - UV_CACHE_DIR=/workspace/.uv-cache
       - PYTHON_VERSION=${PYTHON_VERSION:-3.13}
       - SKIP_VCS=true
-      # txt2img settings
-      - MODEL=${MODEL}
-      - LORA=${LORA:-}
-      - PRESET_URL=${PRESET_URL:-}
+      # Model configuration (JSON string, URL, or preset name)
+      - CONFIG=${CONFIG:-illustrious}
+      # API keys
       - CIVITAI_API_KEY=${CIVITAI_API_KEY:-}
       - HF_TOKEN=${HF_TOKEN:-}
-      - OUTPUT_FORMAT=${OUTPUT_FORMAT:-webp}
-      - TRAINING_RESOLUTION=${TRAINING_RESOLUTION:-1024}
-      - PROMPT_PARSER=${PROMPT_PARSER:-legacy}
-      - QUANTIZATION=${QUANTIZATION:-none}
-      - VAE_TILING=${VAE_TILING:-false}
+      # Directories
       - MODEL_CACHE_DIR=/workspace/models
+      - OUTPUT_DIR=/workspace/outputs
+      - PRESETS_DIR=/workspace/app/presets
     volumes:
       # Persistent storage
       - server-data:/workspace

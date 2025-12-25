@@ -46,6 +46,7 @@ class ServerInfo(BaseModel):
 
     model_name: str
     training_resolution: str
+    prompt_parser: str  # "lpw" or "compel"
 
 
 class ErrorResponse(BaseModel):

@@ -32,7 +32,7 @@ Edit `.env` file:
 | `MODEL`               | Civitai AIR URN or HF repo | ✓               |
 | `CIVITAI_API_KEY`     | Civitai API key            | For some models |
 | `TRAINING_RESOLUTION` | `1024` or `1024x1024`      |                 |
-| `PROMPT_PARSER`       | `legacy` or `compel`       |                 |
+| `PROMPT_PARSER`       | `lpw` or `compel`          |                 |
 
 See [.env.example](.env.example) for all options.
 

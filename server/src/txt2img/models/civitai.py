@@ -85,7 +85,7 @@ async def download_model(
     settings = get_settings()
 
     if target_dir is None:
-        target_dir = settings.model_cache_dir / "civitai" / resource.type.value
+        target_dir = settings.model_cache_dir / "civitai" / resource.type
 
     target_dir.mkdir(parents=True, exist_ok=True)
 

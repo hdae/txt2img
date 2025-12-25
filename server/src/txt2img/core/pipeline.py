@@ -1,4 +1,4 @@
-"""SDXL Pipeline with torch.compile support."""
+"""SDXL Pipeline with model configuration support."""
 
 import logging
 import random
@@ -7,6 +7,7 @@ from typing import Any
 
 import torch
 from diffusers import (
+    AutoencoderKL,
     DPMSolverMultistepScheduler,
     EulerAncestralDiscreteScheduler,
     EulerDiscreteScheduler,
@@ -14,10 +15,14 @@ from diffusers import (
 )
 from PIL import Image
 
-from txt2img.config import get_settings
+from txt2img.config import (
+    ModelType,
+    QuantizationType,
+    get_model_config,
+    get_settings,
+)
 from txt2img.core.image_processor import ImageMetadata, SavedImage, save_image
 from txt2img.core.job_queue import GenerationParams
-from txt2img.core.prompt_parser import ParsedPrompt
 from txt2img.models.air_parser import (
     AIRResource,
     HuggingFaceResource,
@@ -39,23 +44,57 @@ SCHEDULERS = {
 
 
 class SDXLPipeline:
-    """SDXL Pipeline manager with torch.compile support."""
+    """SDXL Pipeline manager with model configuration support."""
 
     def __init__(self) -> None:
         self.pipe: StableDiffusionXLPipeline | None = None
         self.model_name: str = ""
         self.loaded_loras: list[str] = []
-        self._compiled = False
+        self._quantized = False
 
     async def load_model(self) -> None:
-        """Load model from configuration."""
+        """Load model from ModelConfig."""
+        config = get_model_config()
+
+        logger.info(f"Loading model: {config.model} (type: {config.type.value})")
+
+        # Load base model based on type
+        if config.type in (ModelType.SDXL,):
+            await self._load_sdxl_model(config.model)
+        elif config.type == ModelType.SD3:
+            raise NotImplementedError("SD3 pipeline not yet implemented")
+        elif config.type == ModelType.FLUX:
+            raise NotImplementedError("Flux pipeline not yet implemented")
+        else:
+            raise ValueError(f"Unsupported model type: {config.type}")
+
+        # Move to GPU
+        self.pipe = self.pipe.to("cuda")
+
+        # Load VAE if specified
+        await self._load_vae(config.vae)
+
+        # Enable memory optimizations
+        self.pipe.vae.enable_slicing()
+
+        if config.vae_tiling:
+            self.pipe.vae.enable_tiling()
+            logger.info("VAE tiling enabled")
+
+        # Apply quantization
+        await self._apply_quantization(config.quantization)
+
+        logger.info(f"Model loaded: {self.model_name}")
+
+        # Load LoRAs if configured
+        if config.loras:
+            await self.load_loras(config.loras)
+
+    async def _load_sdxl_model(self, model_ref_str: str) -> None:
+        """Load SDXL model from various sources."""
         settings = get_settings()
+        model_ref = parse_model_ref(model_ref_str)
 
-        logger.info(f"Loading model: {settings.model}")
-
-        model_ref = parse_model_ref(settings.model)
-
-        # Determine model path based on reference type
         if isinstance(model_ref, AIRResource):
             if model_ref.source == ModelSource.CIVITAI:
                 model_path = await civitai_download(model_ref)
@@ -87,61 +126,78 @@ class SDXLPipeline:
         else:
             raise ValueError(f"Unsupported model reference type: {type(model_ref)}")
 
-        # Move to GPU
-        self.pipe = self.pipe.to("cuda")
+    async def _load_vae(self, vae_ref: str | None) -> None:
+        """Load VAE from various sources or use model's embedded VAE."""
+        if not self.pipe:
+            raise RuntimeError("Pipeline not loaded")
 
-        # Replace VAE with FP16-fixed version
-        from diffusers import AutoencoderKL
+        settings = get_settings()
 
-        logger.info("Loading madebyollin/sdxl-vae-fp16-fix...")
-        vae = AutoencoderKL.from_pretrained(
-            "madebyollin/sdxl-vae-fp16-fix",
-            torch_dtype=torch.float16,
-            token=settings.hf_token,
-        ).to("cuda")
-        self.pipe.vae = vae
+        if vae_ref is None:
+            logger.info("Using model's embedded VAE")
+            return
 
-        # Enable memory optimizations (new API)
-        self.pipe.vae.enable_slicing()
+        logger.info(f"Loading VAE: {vae_ref}")
 
-        if settings.vae_tiling:
-            self.pipe.vae.enable_tiling()
-            logger.info("VAE tiling enabled")
+        vae_model_ref = parse_model_ref(vae_ref)
 
-        # Apply TorchAO quantization if enabled
-        from txt2img.config import QuantizationType
-
-        if settings.quantization != QuantizationType.NONE and not self._compiled:
-            logger.info(f"Applying TorchAO quantization: {settings.quantization.value}")
-            try:
-                from torchao.quantization import (
-                    Int4WeightOnlyConfig,
-                    Int8WeightOnlyConfig,
-                    quantize_,
+        if isinstance(vae_model_ref, AIRResource):
+            if vae_model_ref.source == ModelSource.CIVITAI:
+                vae_path = await civitai_download(vae_model_ref)
+                vae = AutoencoderKL.from_single_file(
+                    str(vae_path),
+                    torch_dtype=torch.float16,
                 )
+            else:
+                raise ValueError(f"Unsupported VAE AIR source: {vae_model_ref.source}")
+        elif isinstance(vae_model_ref, HuggingFaceResource):
+            vae = AutoencoderKL.from_pretrained(
+                vae_model_ref.repo_id,
+                torch_dtype=torch.float16,
+                token=settings.hf_token,
+            )
+        elif isinstance(vae_model_ref, URLResource):
+            vae_path = await download_from_url(vae_model_ref)
+            vae = AutoencoderKL.from_single_file(
+                str(vae_path),
+                torch_dtype=torch.float16,
+            )
+        else:
+            raise ValueError(f"Unsupported VAE reference type: {type(vae_model_ref)}")
 
-                if settings.quantization == QuantizationType.INT8_WEIGHT_ONLY:
-                    quantize_(self.pipe.unet, Int8WeightOnlyConfig())
-                    quantize_(self.pipe.vae, Int8WeightOnlyConfig())
-                    logger.info("Applied int8 weight-only quantization to UNet and VAE")
-                elif settings.quantization == QuantizationType.INT4_WEIGHT_ONLY:
-                    quantize_(self.pipe.unet, Int4WeightOnlyConfig())
-                    logger.info("Applied int4 weight-only quantization to UNet")
-                elif settings.quantization == QuantizationType.FP8_WEIGHT_ONLY:
-                    from torchao.quantization import Float8WeightOnlyConfig
+        self.pipe.vae = vae.to("cuda")
+        logger.info("VAE loaded and replaced")
 
-                    quantize_(self.pipe.unet, Float8WeightOnlyConfig())
-                    logger.info("Applied fp8 weight-only quantization to UNet")
+    async def _apply_quantization(self, quantization: QuantizationType) -> None:
+        """Apply TorchAO quantization to model."""
+        if not self.pipe or quantization == QuantizationType.NONE or self._quantized:
+            return
 
-                self._compiled = True  # Reusing flag to prevent re-quantization
-            except Exception as e:
-                logger.warning(f"TorchAO quantization failed: {e}, continuing without quantization")
+        logger.info(f"Applying TorchAO quantization: {quantization.value}")
 
-        logger.info(f"Model loaded: {self.model_name}")
+        try:
+            from torchao.quantization import (
+                Int4WeightOnlyConfig,
+                Int8WeightOnlyConfig,
+                quantize_,
+            )
 
-        # Load LoRAs if configured
-        if settings.lora:
-            await self.load_loras(settings.lora.split(","))
+            if quantization == QuantizationType.INT8_WEIGHT_ONLY:
+                quantize_(self.pipe.unet, Int8WeightOnlyConfig())
+                quantize_(self.pipe.vae, Int8WeightOnlyConfig())
+                logger.info("Applied int8 weight-only quantization to UNet and VAE")
+            elif quantization == QuantizationType.INT4_WEIGHT_ONLY:
+                quantize_(self.pipe.unet, Int4WeightOnlyConfig())
+                logger.info("Applied int4 weight-only quantization to UNet")
+            elif quantization == QuantizationType.FP8_WEIGHT_ONLY:
+                from torchao.quantization import Float8WeightOnlyConfig
+
+                quantize_(self.pipe.unet, Float8WeightOnlyConfig())
+                logger.info("Applied fp8 weight-only quantization to UNet")
+
+            self._quantized = True
+        except Exception as e:
+            logger.warning(f"TorchAO quantization failed: {e}, continuing without quantization")
 
     async def load_loras(self, lora_refs: list[str]) -> None:
         """Load LoRA weights.
@@ -180,116 +236,6 @@ class SDXLPipeline:
             )
             self.loaded_loras.append(adapter_name)
             logger.info(f"LoRA loaded: {adapter_name}")
-
-    def _encode_prompt_legacy(
-        self,
-        parsed: ParsedPrompt,
-        negative_parsed: ParsedPrompt,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Encode prompt using legacy weighted encoding.
-
-        Args:
-            parsed: Parsed positive prompt
-            negative_parsed: Parsed negative prompt
-
-        Returns:
-            Tuple of (prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds)
-        """
-        if not self.pipe:
-            raise RuntimeError("Pipeline not loaded")
-
-        device = self.pipe.device
-        dtype = self.pipe.text_encoder.dtype
-
-        def encode_weighted_chunk(chunks: list) -> tuple[torch.Tensor, torch.Tensor]:
-            """Encode a list of weighted chunks and combine them."""
-            all_embeds_1 = []
-            all_embeds_2 = []
-            all_weights = []
-
-            for chunk in chunks:
-                # Encode each part separately
-                for part in chunk:
-                    # Get embeddings from both text encoders
-                    tokens_1 = self.pipe.tokenizer(
-                        part.text,
-                        padding="max_length",
-                        max_length=self.pipe.tokenizer.model_max_length,
-                        truncation=True,
-                        return_tensors="pt",
-                    ).input_ids.to(device)
-
-                    tokens_2 = self.pipe.tokenizer_2(
-                        part.text,
-                        padding="max_length",
-                        max_length=self.pipe.tokenizer_2.model_max_length,
-                        truncation=True,
-                        return_tensors="pt",
-                    ).input_ids.to(device)
-
-                    with torch.no_grad():
-                        embeds_1 = self.pipe.text_encoder(tokens_1, output_hidden_states=True)
-                        embeds_2 = self.pipe.text_encoder_2(tokens_2, output_hidden_states=True)
-
-                    all_embeds_1.append(embeds_1.hidden_states[-2])
-                    all_embeds_2.append(embeds_2.hidden_states[-2])
-                    all_weights.append(part.weight)
-
-            # Weighted average of embeddings
-            if all_embeds_1:
-                weights_tensor = torch.tensor(all_weights, device=device, dtype=dtype)
-                weights_tensor = weights_tensor / weights_tensor.sum()
-
-                prompt_embeds_1 = sum(
-                    e * w for e, w in zip(all_embeds_1, weights_tensor, strict=False)
-                )
-                prompt_embeds_2 = sum(
-                    e * w for e, w in zip(all_embeds_2, weights_tensor, strict=False)
-                )
-
-                # Get pooled output from last encoder
-                pooled = all_embeds_2[-1] if all_embeds_2 else None
-            else:
-                prompt_embeds_1 = torch.zeros((1, 77, 768), device=device, dtype=dtype)
-                prompt_embeds_2 = torch.zeros((1, 77, 1280), device=device, dtype=dtype)
-                pooled = None
-
-            combined = torch.cat([prompt_embeds_1, prompt_embeds_2], dim=-1)
-            return combined, pooled
-
-        # Encode positive and negative prompts
-        prompt_embeds, pooled_prompt = encode_weighted_chunk(parsed.chunks)
-        negative_embeds, neg_pooled = encode_weighted_chunk(negative_parsed.chunks)
-
-        # Handle pooled outputs
-        if pooled_prompt is None:
-            pooled_prompt = torch.zeros((1, 1280), device=device, dtype=dtype)
-        else:
-            # Get the actual pooled output
-            pooled_prompt = self.pipe.text_encoder_2(
-                self.pipe.tokenizer_2(
-                    parsed.chunks[0][0].text if parsed.chunks else "",
-                    padding="max_length",
-                    max_length=self.pipe.tokenizer_2.model_max_length,
-                    truncation=True,
-                    return_tensors="pt",
-                ).input_ids.to(device)
-            ).text_embeds
-
-        if neg_pooled is None:
-            neg_pooled = torch.zeros((1, 1280), device=device, dtype=dtype)
-        else:
-            neg_pooled = self.pipe.text_encoder_2(
-                self.pipe.tokenizer_2(
-                    negative_parsed.chunks[0][0].text if negative_parsed.chunks else "",
-                    padding="max_length",
-                    max_length=self.pipe.tokenizer_2.model_max_length,
-                    truncation=True,
-                    return_tensors="pt",
-                ).input_ids.to(device)
-            ).text_embeds
-
-        return prompt_embeds, negative_embeds, pooled_prompt, neg_pooled
 
     async def generate(
         self,

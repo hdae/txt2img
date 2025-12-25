@@ -76,11 +76,17 @@ async def job_worker():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    from txt2img.config import load_model_config
+
     settings = get_settings()
 
     # Create output directories
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     settings.model_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load model configuration
+    logger.info("Loading model configuration...")
+    load_model_config()
 
     # Load model
     logger.info("Loading model...")

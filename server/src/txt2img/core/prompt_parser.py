@@ -1,10 +1,10 @@
 """Prompt parser for weighted prompts.
 
 Supports two modes:
-- Legacy: StableDiffusionWebUI compatible syntax
-- Compel: Compel library syntax
+- LPW: Long Prompt Weighting (A1111/StableDiffusionWebUI compatible syntax)
+- Compel: Compel library native syntax
 
-Legacy syntax examples:
+LPW (A1111) syntax examples:
     (word:1.2)           # Weight 1.2
     ((word))             # Weight 1.1^2 = 1.21
     [word]               # Weight 0.9
@@ -15,6 +15,10 @@ Compel syntax examples:
     (word)1.2            # Weight 1.2
     word++               # Increase weight
     word--               # Decrease weight
+    .and()               # Conjunction
+    .blend()             # Blending
+
+Note: LPW mode parses A1111 syntax and converts to Compel format internally.
 """
 
 import re
@@ -22,11 +26,11 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-class ParserMode(str, Enum):
+class PromptParser(str, Enum):
     """Prompt parser mode."""
 
-    LEGACY = "legacy"
-    COMPEL = "compel"
+    LPW = "lpw"  # A1111/WebUI compatible (converted to Compel internally)
+    COMPEL = "compel"  # Native Compel syntax
 
 
 @dataclass
@@ -44,67 +48,20 @@ class ParsedPrompt:
     chunks: list[list[WeightedChunk]]  # List of chunks, each chunk is a list of weighted parts
 
 
-# Legacy syntax patterns
-LEGACY_WEIGHT_PATTERN = re.compile(r"\(([^()]+):([0-9.]+)\)")  # (text:weight)
-LEGACY_EMPHASIS_PATTERN = re.compile(r"\(([^()]+)\)")  # (text) - increase weight
-LEGACY_DEEMPHASIS_PATTERN = re.compile(r"\[([^\[\]]+)\]")  # [text] - decrease weight
+# A1111/Legacy syntax patterns
+A1111_WEIGHT_PATTERN = re.compile(r"\(([^()]+):([0-9.]+)\)")  # (text:weight)
+A1111_BRACKET_WEIGHT_PATTERN = re.compile(
+    r"\[([^\[\]]+):([0-9.]+)\]"
+)  # [text:weight] (de-emphasis with weight)
 
 
-def _count_nested_parens(text: str, open_char: str, close_char: str) -> int:
-    """Count nested parentheses/brackets."""
-    count = 0
-    for char in text:
-        if char == open_char:
-            count += 1
-        elif char == close_char:
-            break
-    return count
-
-
-def _parse_legacy_weights(text: str, base_weight: float = 1.0) -> list[WeightedChunk]:
-    """Parse legacy weight syntax recursively.
-
-    Args:
-        text: Text to parse
-        base_weight: Base weight multiplier
-
-    Returns:
-        List of weighted chunks
-    """
-    chunks: list[WeightedChunk] = []
-
-    # First, handle explicit weights: (text:1.2)
-    last_end = 0
-    for match in LEGACY_WEIGHT_PATTERN.finditer(text):
-        # Add text before match
-        if match.start() > last_end:
-            before = text[last_end : match.start()]
-            if before.strip():
-                # Recursively parse for nested emphasis
-                chunks.extend(_parse_legacy_emphasis(before, base_weight))
-
-        # Add weighted chunk
-        inner_text = match.group(1).strip()
-        weight = float(match.group(2)) * base_weight
-        if inner_text:
-            chunks.append(WeightedChunk(text=inner_text, weight=weight))
-
-        last_end = match.end()
-
-    # Handle remaining text
-    if last_end < len(text):
-        remaining = text[last_end:]
-        if remaining.strip():
-            chunks.extend(_parse_legacy_emphasis(remaining, base_weight))
-
-    return chunks if chunks else [WeightedChunk(text=text.strip(), weight=base_weight)]
-
-
-def _parse_legacy_emphasis(text: str, base_weight: float = 1.0) -> list[WeightedChunk]:
-    """Parse emphasis (parentheses) and de-emphasis (brackets).
+def _parse_a1111_emphasis(text: str, base_weight: float = 1.0) -> list[WeightedChunk]:
+    """Parse A1111 emphasis (parentheses) and de-emphasis (brackets).
 
     ((text)) -> weight * 1.1^2
     [text] -> weight * 0.9
+    (text:1.5) -> explicit weight
+    [text:0.5] -> explicit weight (de-emphasis variant)
     """
     chunks: list[WeightedChunk] = []
     i = 0
@@ -157,16 +114,24 @@ def _parse_legacy_emphasis(text: str, base_weight: float = 1.0) -> list[Weighted
 
             if depth == 0:
                 inner = text[i + 1 : j - 1]
-                # Count nested brackets
-                bracket_count = 1
-                while inner.startswith("[") and inner.endswith("]"):
-                    inner = inner[1:-1]
-                    bracket_count += 1
+                # Check for explicit weight first: [text:0.5]
+                weight_match = re.match(r"^(.+):([0-9.]+)$", inner)
+                if weight_match:
+                    inner_text = weight_match.group(1).strip()
+                    weight = float(weight_match.group(2)) * base_weight
+                    if inner_text:
+                        chunks.append(WeightedChunk(text=inner_text, weight=weight))
+                else:
+                    # Count nested brackets
+                    bracket_count = 1
+                    while inner.startswith("[") and inner.endswith("]"):
+                        inner = inner[1:-1]
+                        bracket_count += 1
 
-                # De-emphasis: multiply by 0.9 for each level
-                new_weight = base_weight * (0.9**bracket_count)
-                if inner.strip():
-                    chunks.append(WeightedChunk(text=inner.strip(), weight=new_weight))
+                    # De-emphasis: multiply by 0.9 for each level
+                    new_weight = base_weight * (0.9**bracket_count)
+                    if inner.strip():
+                        chunks.append(WeightedChunk(text=inner.strip(), weight=new_weight))
                 i = j
                 continue
 
@@ -184,11 +149,11 @@ def _parse_legacy_emphasis(text: str, base_weight: float = 1.0) -> list[Weighted
     return chunks if chunks else [WeightedChunk(text=text.strip(), weight=base_weight)]
 
 
-def parse_legacy_prompt(prompt: str) -> ParsedPrompt:
-    """Parse prompt using legacy (StableDiffusionWebUI) syntax.
+def parse_a1111_prompt(prompt: str) -> ParsedPrompt:
+    """Parse prompt using A1111 (StableDiffusionWebUI) syntax.
 
     Args:
-        prompt: Raw prompt string
+        prompt: Raw prompt string with A1111 syntax
 
     Returns:
         ParsedPrompt with chunks and weights
@@ -200,7 +165,7 @@ def parse_legacy_prompt(prompt: str) -> ParsedPrompt:
     for raw_chunk in raw_chunks:
         raw_chunk = raw_chunk.strip()
         if raw_chunk:
-            weighted_parts = _parse_legacy_weights(raw_chunk)
+            weighted_parts = _parse_a1111_emphasis(raw_chunk)
             if weighted_parts:
                 chunks.append(weighted_parts)
 
@@ -211,6 +176,36 @@ def parse_legacy_prompt(prompt: str) -> ParsedPrompt:
     return ParsedPrompt(chunks=chunks)
 
 
+def convert_a1111_to_compel(prompt: str) -> str:
+    """Convert A1111 prompt syntax to Compel syntax.
+
+    A1111:  (word:1.5)   -> Compel: (word)1.5
+    A1111:  ((word))     -> Compel: (word)1.21
+    A1111:  [word]       -> Compel: (word)0.9
+    A1111:  [[[word]]]   -> Compel: (word)0.729
+    A1111:  BREAK        -> (handled separately, not converted here)
+
+    Args:
+        prompt: A1111 formatted prompt
+
+    Returns:
+        Compel formatted prompt
+    """
+    # Parse A1111 and convert to Compel format
+    # Don't split by BREAK here - caller should handle BREAK chunks
+    parsed = _parse_a1111_emphasis(prompt)
+
+    compel_parts = []
+    for chunk in parsed:
+        if chunk.weight == 1.0:
+            compel_parts.append(chunk.text)
+        else:
+            # Compel format: (text)weight
+            compel_parts.append(f"({chunk.text}){chunk.weight:.2f}")
+
+    return " ".join(compel_parts)
+
+
 def parse_compel_prompt(prompt: str) -> ParsedPrompt:
     """Parse prompt for Compel library.
 
@@ -218,10 +213,10 @@ def parse_compel_prompt(prompt: str) -> ParsedPrompt:
     We only split by BREAK for chunk separation.
 
     Args:
-        prompt: Raw prompt string
+        prompt: Raw prompt string with Compel syntax
 
     Returns:
-        ParsedPrompt with chunks (Compel will handle weights)
+        ParsedPrompt with chunks (Compel will handle weights internally)
     """
     # Split by BREAK
     raw_chunks = re.split(r"\bBREAK\b", prompt, flags=re.IGNORECASE)
@@ -239,17 +234,46 @@ def parse_compel_prompt(prompt: str) -> ParsedPrompt:
     return ParsedPrompt(chunks=chunks)
 
 
-def parse_prompt(prompt: str, mode: ParserMode = ParserMode.LEGACY) -> ParsedPrompt:
+def parse_lpw_prompt(prompt: str) -> ParsedPrompt:
+    """Parse prompt using LPW (A1111) syntax and prepare for Compel.
+
+    This parses A1111 syntax and converts each chunk to Compel format.
+
+    Args:
+        prompt: Raw prompt string with A1111 syntax
+
+    Returns:
+        ParsedPrompt with Compel-converted chunks
+    """
+    # Split by BREAK
+    raw_chunks = re.split(r"\bBREAK\b", prompt, flags=re.IGNORECASE)
+
+    chunks: list[list[WeightedChunk]] = []
+    for raw_chunk in raw_chunks:
+        raw_chunk = raw_chunk.strip()
+        if raw_chunk:
+            # Convert A1111 chunk to Compel format
+            compel_text = convert_a1111_to_compel(raw_chunk)
+            # Return as single weighted chunk (Compel handles the rest)
+            chunks.append([WeightedChunk(text=compel_text, weight=1.0)])
+
+    if not chunks:
+        chunks = [[WeightedChunk(text="", weight=1.0)]]
+
+    return ParsedPrompt(chunks=chunks)
+
+
+def parse_prompt(prompt: str, mode: PromptParser = PromptParser.LPW) -> ParsedPrompt:
     """Parse prompt according to specified mode.
 
     Args:
         prompt: Raw prompt string
-        mode: Parser mode (legacy or compel)
+        mode: Parser mode (lpw or compel)
 
     Returns:
         ParsedPrompt with chunks and weights
     """
-    if mode == ParserMode.LEGACY:
-        return parse_legacy_prompt(prompt)
+    if mode == PromptParser.LPW:
+        return parse_lpw_prompt(prompt)
     else:
         return parse_compel_prompt(prompt)
