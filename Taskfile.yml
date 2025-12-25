@@ -1,0 +1,89 @@
+version: "3"
+
+# Automatically detect host UID/GID on Linux/Unix
+vars:
+  PUID:
+    sh: command -v id >/dev/null 2>&1 && echo ${PUID:-$(id -u)} || echo ${PUID:-1000}
+  PGID:
+    sh: command -v id >/dev/null 2>&1 && echo ${PGID:-$(id -g)} || echo ${PGID:-1000}
+  COMPOSE_PROJECT_NAME: '{{.COMPOSE_PROJECT_NAME | default (env "COMPOSE_PROJECT_NAME" | default "txt2img")}}'
+
+env:
+  PUID: "{{.PUID}}"
+  PGID: "{{.PGID}}"
+
+tasks:
+  up:
+    desc: Start all containers
+    deps: [create-volumes]
+    cmds:
+      - docker compose up
+
+  up.detach:
+    desc: Start containers in detached mode
+    deps: [create-volumes]
+    cmds:
+      - docker compose up -d
+
+  down:
+    desc: Stop all containers
+    cmds:
+      - docker compose down
+
+  restart:
+    desc: Restart all containers
+    cmds:
+      - docker compose restart
+
+  shell:
+    desc: Open a shell in the server container
+    cmds:
+      - docker compose exec server bash
+
+  logs:
+    desc: View container logs
+    cmds:
+      - docker compose logs -f
+
+  logs.server:
+    desc: View server logs
+    cmds:
+      - docker compose logs -f server
+
+  create-volumes:
+    desc: Create shared volumes if they don't exist
+    cmds:
+      - docker volume create shared_uv-cache || true
+      - docker volume create shared_model-cache || true
+    status:
+      - docker volume inspect shared_uv-cache
+      - docker volume inspect shared_model-cache
+
+  build.client:
+    desc: Build client for production
+    cmds:
+      - cd client && pnpm install && pnpm run build
+
+  reset:
+    desc: Reset server data volume (keeps cache)
+    prompt: This will delete the server data volume. Continue?
+    cmds:
+      - docker compose down
+      - docker volume rm {{.COMPOSE_PROJECT_NAME}}_server-data || true
+      - echo "✓ Reset complete. Run 'task up' to restart."
+
+  purge:
+    desc: Purge project volumes (keeps shared caches)
+    prompt: This will delete ALL project volumes. Continue?
+    cmds:
+      - docker compose down
+      - docker volume rm {{.COMPOSE_PROJECT_NAME}}_server-data || true
+      - docker volume rm {{.COMPOSE_PROJECT_NAME}}_client-node-modules || true
+      - echo "✓ Purge complete (shared caches preserved). Run 'task up' to restart."
+
+  clean-outputs:
+    desc: Clean generated images
+    prompt: This will delete all generated images. Continue?
+    cmds:
+      - rm -rf outputs/*
+      - echo "✓ Outputs cleaned."

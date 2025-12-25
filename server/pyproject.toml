@@ -1,0 +1,52 @@
+[project]
+name = "txt2img"
+version = "0.1.0"
+description = "Text-to-Image generation service using Diffusers"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.127.0",
+    "uvicorn[standard]==0.40.0",
+    "pydantic==2.12.5",
+    "pydantic-settings==2.12.0",
+    "diffusers==0.36.0",
+    "transformers==4.57.3",
+    "accelerate==1.12.0",
+    "torch==2.9.1",
+    "safetensors==0.7.0",
+    "httpx==0.28.1",
+    "pillow==12.0.0",
+    "sse-starlette==3.0.4",
+    "compel==2.3.1",
+    "PyYAML==6.0.3",
+    "torchao==0.15.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.2",
+    "pytest-asyncio==1.3.0",
+    "ruff==0.11.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/txt2img"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+ignore = ["E501", "SIM105", "SIM117"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["txt2img"]
