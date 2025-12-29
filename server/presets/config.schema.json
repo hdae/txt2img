@@ -43,21 +43,50 @@
         "loras": {
             "type": "array",
             "items": {
-                "type": "string"
+                "type": "object",
+                "properties": {
+                    "ref": {
+                        "type": "string",
+                        "description": "LoRA reference (Civitai AIR URN or URL)"
+                    },
+                    "triggers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Manual trigger words (optional, auto-detected from Civitai if not specified)"
+                    },
+                    "weight": {
+                        "type": "number",
+                        "default": 1.0,
+                        "minimum": 0.0,
+                        "maximum": 2.0,
+                        "description": "Recommended LoRA weight (overall influence)"
+                    },
+                    "trigger_weight": {
+                        "type": "number",
+                        "default": 0.5,
+                        "minimum": 0.0,
+                        "maximum": 2.0,
+                        "description": "Recommended trigger embedding weight (target influence)"
+                    }
+                },
+                "required": [
+                    "ref"
+                ]
             },
             "default": [],
-            "description": "List of LoRA references (Civitai AIR or URL)"
+            "description": "List of LoRA configurations"
         },
         "quantization": {
             "type": "string",
             "enum": [
                 "none",
                 "int8wo",
-                "int4wo",
                 "fp8wo"
             ],
             "default": "none",
-            "description": "TorchAO quantization type: none, int8 weight-only, int4 weight-only, fp8 weight-only"
+            "description": "TorchAO quantization type: none, int8 weight-only, fp8 weight-only"
         },
         "vae_tiling": {
             "type": "boolean",
@@ -103,15 +132,6 @@
             ],
             "default": "webp",
             "description": "Output image format"
-        },
-        "prompt_parser": {
-            "type": "string",
-            "enum": [
-                "lpw",
-                "compel"
-            ],
-            "default": "lpw",
-            "description": "Prompt parsing mode: lpw (A1111/WebUI compatible) or compel (native Compel syntax)"
         }
     },
     "additionalProperties": true

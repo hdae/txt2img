@@ -67,3 +67,55 @@ txt2img/
     ├── package.json
     └── src/
 ```
+
+## LoRA Configuration
+
+In preset files, LoRAs are specified as an array of objects:
+
+```json
+{
+    "loras": [
+        { "ref": "urn:air:sdxl:lora:civitai:1377820@1963644" },
+        {
+            "ref": "https://example.com/lora.safetensors",
+            "triggers": ["mytrigger", "custom_tag"]
+        }
+    ]
+}
+```
+
+- `ref` (required): Civitai AIR URN or direct URL
+- `triggers` (optional): Manual trigger words. If omitted, auto-detected from
+  Civitai API
+
+### API Usage
+
+```json
+{
+    "loras": [
+        { "id": "civitai_1963644", "weight": 1.0, "trigger_weight": 0.5 }
+    ]
+}
+```
+
+- `weight`: LoRA model weight (overall influence)
+- `trigger_weight`: Trigger embedding weight (target influence), set to 0 to
+  disable
+
+## Known Issues
+
+### LoRA + Quantization Causes Black Images
+
+**Problem**: Using TorchAO quantization (`int8wo`, `fp8wo`) together with LoRAs
+produces completely black images.
+
+**Cause**: TorchAO's `quantize_()` replaces Linear layers with quantized
+tensors, which conflicts with PEFT's LoRA adapter injection mechanism.
+
+**Workaround**: The server automatically disables quantization when LoRAs are
+loaded. If you need both:
+
+- Use quantization without LoRAs, OR
+- Use LoRAs without quantization
+
+This is a known upstream compatibility issue between TorchAO and PEFT.

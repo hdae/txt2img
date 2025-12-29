@@ -3,6 +3,21 @@
 from pydantic import BaseModel, Field
 
 
+class LoraRequest(BaseModel):
+    """LoRA request for generation."""
+
+    id: str = Field(description="LoRA ID")
+    weight: float = Field(
+        default=1.0, ge=0.0, le=2.0, description="LoRA weight (overall influence)"
+    )
+    trigger_weight: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=2.0,
+        description="Trigger embedding weight (target influence)",
+    )
+
+
 class GenerateRequest(BaseModel):
     """Request body for image generation."""
 
@@ -14,6 +29,7 @@ class GenerateRequest(BaseModel):
     cfg_scale: float = Field(default=7.0, ge=1.0, le=30.0, description="CFG scale")
     seed: int | None = Field(default=None, description="Random seed (null for random)")
     sampler: str = Field(default="euler", description="Sampler name")
+    loras: list[LoraRequest] | None = Field(default=None, description="LoRAs to apply with weights")
 
 
 class GenerateResponse(BaseModel):
@@ -41,12 +57,22 @@ class ImageListResponse(BaseModel):
     limit: int
 
 
+class LoraInfo(BaseModel):
+    """LoRA information for /info endpoint."""
+
+    id: str
+    name: str
+    trigger_words: list[str] = Field(default_factory=list)
+    weight: float = Field(default=1.0, description="Recommended LoRA weight")
+    trigger_weight: float = Field(default=0.5, description="Recommended trigger embedding weight")
+
+
 class ServerInfo(BaseModel):
     """Server information response."""
 
     model_name: str
     training_resolution: str
-    prompt_parser: str  # "lpw" or "compel"
+    available_loras: list[LoraInfo] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):

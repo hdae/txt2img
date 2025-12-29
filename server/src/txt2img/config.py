@@ -22,19 +22,11 @@ class OutputFormat(str, Enum):
     WEBP = "webp"
 
 
-class PromptParser(str, Enum):
-    """Prompt parsing mode."""
-
-    LPW = "lpw"  # A1111/WebUI compatible (Long Prompt Weighting)
-    COMPEL = "compel"  # Compel library native syntax
-
-
 class QuantizationType(str, Enum):
     """Quantization type for model optimization."""
 
     NONE = "none"
     INT8_WEIGHT_ONLY = "int8wo"
-    INT4_WEIGHT_ONLY = "int4wo"
     FP8_WEIGHT_ONLY = "fp8wo"
 
 
@@ -44,6 +36,26 @@ class ModelType(str, Enum):
     SDXL = "sdxl"  # Stable Diffusion XL and derivatives (Illustrious, etc.)
     SD3 = "sd3"  # Stable Diffusion 3.x
     FLUX = "flux"  # Flux.1 / Flux 2
+
+
+@dataclass
+class LoraConfig:
+    """LoRA configuration in model config."""
+
+    ref: str  # AIR URN, HuggingFace repo, or URL
+    triggers: list[str] | None = None  # Manual trigger words (None = auto from Civitai)
+    weight: float = 1.0  # Recommended LoRA weight
+    trigger_weight: float = 0.5  # Recommended trigger embedding weight
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LoraConfig":
+        """Create LoraConfig from dictionary."""
+        return cls(
+            ref=data.get("ref", ""),
+            triggers=data.get("triggers"),
+            weight=data.get("weight", 1.0),
+            trigger_weight=data.get("trigger_weight", 0.5),
+        )
 
 
 @dataclass
@@ -59,8 +71,8 @@ class ModelConfig:
     # VAE (null = use model's embedded VAE)
     vae: str | None = None
 
-    # LoRAs
-    loras: list[str] = field(default_factory=list)
+    # LoRAs (string or object with ref + triggers)
+    loras: list[LoraConfig] = field(default_factory=list)
 
     # Performance
     quantization: QuantizationType = QuantizationType.NONE
@@ -75,9 +87,6 @@ class ModelConfig:
     # Output
     output_format: OutputFormat = OutputFormat.WEBP
 
-    # Prompt parsing
-    prompt_parser: PromptParser = PromptParser.LPW
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ModelConfig":
         """Create ModelConfig from dictionary."""
@@ -88,8 +97,10 @@ class ModelConfig:
             data["quantization"] = QuantizationType(data["quantization"])
         if "output_format" in data and isinstance(data["output_format"], str):
             data["output_format"] = OutputFormat(data["output_format"])
-        if "prompt_parser" in data and isinstance(data["prompt_parser"], str):
-            data["prompt_parser"] = PromptParser(data["prompt_parser"])
+
+        # Handle loras conversion (string or dict -> LoraConfig)
+        if "loras" in data:
+            data["loras"] = [LoraConfig.from_dict(lora) for lora in data["loras"]]
 
         # Filter to only known fields
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}
@@ -111,7 +122,6 @@ class ModelConfig:
             "default_cfg": self.default_cfg,
             "default_sampler": self.default_sampler,
             "output_format": self.output_format.value,
-            "prompt_parser": self.prompt_parser.value,
         }
 
 

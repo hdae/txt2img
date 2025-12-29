@@ -12,12 +12,14 @@ from txt2img.api.schemas import (
     GenerateResponse,
     ImageInfo,
     ImageListResponse,
+    LoraInfo,
     ServerInfo,
 )
 from txt2img.api.sse import sse_endpoint
 from txt2img.config import get_settings
 from txt2img.core.image_processor import list_images
 from txt2img.core.job_queue import GenerationParams, job_queue
+from txt2img.core.lora_manager import lora_manager
 from txt2img.core.pipeline import pipeline
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,18 @@ async def generate_image(request: GenerateRequest) -> GenerateResponse:
 
     Returns job_id and SSE URL for progress monitoring.
     """
+    # Debug logging
+    logger.info(f"Generate request: prompt={request.prompt[:50] if request.prompt else 'empty'}")
+    logger.info(f"Generate request loras: {request.loras}")
+
+    # Convert loras to list of dicts
+    loras_list = None
+    if request.loras:
+        loras_list = [
+            {"id": lora.id, "weight": lora.weight, "trigger_weight": lora.trigger_weight}
+            for lora in request.loras
+        ]
+
     params = GenerationParams(
         prompt=request.prompt,
         negative_prompt=request.negative_prompt,
@@ -44,6 +58,7 @@ async def generate_image(request: GenerateRequest) -> GenerateResponse:
         cfg_scale=request.cfg_scale,
         seed=request.seed,
         sampler=request.sampler,
+        loras=loras_list,
     )
 
     job = job_queue.create_job(params)
@@ -125,13 +140,25 @@ async def get_thumbnail(image_id: str) -> FileResponse:
 
 @router.get("/info", response_model=ServerInfo)
 async def get_server_info() -> ServerInfo:
-    """Get server information including model name, training resolution, and prompt parser."""
+    """Get server information including model name, training resolution, prompt parser, and available LoRAs."""
     from txt2img.config import get_model_config
 
     config = get_model_config()
 
+    # Get available LoRAs
+    available_loras = [
+        LoraInfo(
+            id=lora.id,
+            name=lora.name,
+            trigger_words=lora.trigger_words,
+            weight=lora.weight,
+            trigger_weight=lora.trigger_weight,
+        )
+        for lora in lora_manager.get_available_loras()
+    ]
+
     return ServerInfo(
         model_name=pipeline.model_name or "Not loaded",
         training_resolution=str(config.training_resolution),
-        prompt_parser=config.prompt_parser.value,
+        available_loras=available_loras,
     )

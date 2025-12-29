@@ -4,19 +4,62 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from txt2img.api.router import router
 from txt2img.config import get_settings
 from txt2img.core.job_queue import job_queue
 from txt2img.core.pipeline import pipeline
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# ANSI color codes for terminal
+RED = "\033[91m"
+YELLOW = "\033[93m"
+RESET = "\033[0m"
+
+
+# Custom formatter with emoji prefixes and time-only format
+class EmojiFormatter(logging.Formatter):
+    """Log formatter with emoji prefixes based on module and content."""
+
+    # Default emojis by log level
+    LEVEL_EMOJI = {
+        logging.DEBUG: "🔍",
+        logging.INFO: "ℹ️ ",
+        logging.WARNING: "⚠️ ",
+        logging.ERROR: "❌",
+        logging.CRITICAL: "🔥",
+    }
+
+    # Module-specific emojis (overrides level emoji for INFO)
+    MODULE_EMOJI = {
+        "txt2img.models.civitai": "📥",  # Download
+        "txt2img.models.huggingface": "📥",  # Download
+        "txt2img.core.lora_manager": "🎨",  # LoRA
+        "txt2img.core.pipeline": "🖼️ ",  # Generation
+        "txt2img.core.job_queue": "📋",  # Jobs
+        "txt2img.core.image_processor": "💾",  # Save
+        "txt2img.api.router": "🌐",  # API
+        "httpx": "🌍",  # HTTP requests
+    }
+
+    def format(self, record):
+        # Use level emoji for warnings/errors, module emoji for info
+        if record.levelno >= logging.WARNING:
+            emoji = self.LEVEL_EMOJI.get(record.levelno, "")
+        else:
+            emoji = self.MODULE_EMOJI.get(record.name, self.LEVEL_EMOJI.get(record.levelno, ""))
+        record.emoji = emoji
+        return super().format(record)
+
+
+# Setup logging with time-only format and emojis
+handler = logging.StreamHandler()
+handler.setFormatter(EmojiFormatter("%(asctime)s %(emoji)s %(message)s", datefmt="%H:%M:%S"))
+logging.root.handlers = [handler]
+logging.root.setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -77,6 +120,7 @@ async def job_worker():
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     from txt2img.config import load_model_config
+    from txt2img.core.lora_manager import lora_manager
 
     settings = get_settings()
 
@@ -92,6 +136,11 @@ async def lifespan(app: FastAPI):
     logger.info("Loading model...")
     await pipeline.load_model()
     logger.info("Model loaded successfully")
+
+    # Initialize LoRA manager
+    logger.info("Initializing LoRAs...")
+    await lora_manager.initialize()
+    logger.info(f"LoRAs initialized: {len(lora_manager.loras)} registered")
 
     # Start job worker
     worker_task = asyncio.create_task(job_worker())
@@ -125,6 +174,26 @@ app.add_middleware(
 
 # Include API router
 app.include_router(router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Log validation errors with request body for debugging."""
+    body = await request.body()
+    body_str = body.decode("utf-8", errors="replace")[:500]  # Truncate long bodies
+    errors = exc.errors()
+
+    # Log with red color for visibility
+    logger.error(f"{RED}[VALIDATION ERROR] {request.method} {request.url.path}{RESET}")
+    logger.error(f"{RED}  Body: {body_str}{RESET}")
+    for err in errors:
+        loc = " -> ".join(str(loc_part) for loc_part in err.get("loc", []))
+        logger.error(f"{RED}  • {loc}: {err.get('msg')}{RESET}")
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": errors},
+    )
 
 
 @app.get("/health")

@@ -81,14 +81,21 @@ class SDXLPipeline:
             self.pipe.vae.enable_tiling()
             logger.info("VAE tiling enabled")
 
-        # Apply quantization
-        await self._apply_quantization(config.quantization)
-
-        logger.info(f"Model loaded: {self.model_name}")
-
-        # Load LoRAs if configured
+        # Load LoRAs BEFORE quantization (quantization breaks LoRA loading)
         if config.loras:
             await self.load_loras(config.loras)
+
+        # Apply quantization AFTER LoRA loading
+        # WARNING: TorchAO quantization + PEFT LoRA causes black images
+        if config.loras and self.loaded_loras and config.quantization != QuantizationType.NONE:
+            logger.warning(
+                "Quantization disabled: LoRA + TorchAO quantization causes black images. "
+                "See README for details."
+            )
+        elif config.quantization != QuantizationType.NONE:
+            await self._apply_quantization(config.quantization)
+
+        logger.info(f"Model loaded: {self.model_name}")
 
     async def _load_sdxl_model(self, model_ref_str: str) -> None:
         """Load SDXL model from various sources."""
@@ -169,26 +176,22 @@ class SDXLPipeline:
         logger.info("VAE loaded and replaced")
 
     async def _apply_quantization(self, quantization: QuantizationType) -> None:
-        """Apply TorchAO quantization to model."""
+        """Apply TorchAO quantization to UNet only (not VAE)."""
         if not self.pipe or quantization == QuantizationType.NONE or self._quantized:
             return
 
         logger.info(f"Applying TorchAO quantization: {quantization.value}")
 
         try:
-            from torchao.quantization import (
-                Int4WeightOnlyConfig,
-                Int8WeightOnlyConfig,
-                quantize_,
-            )
+            from torchao.quantization import quantize_
 
             if quantization == QuantizationType.INT8_WEIGHT_ONLY:
-                quantize_(self.pipe.unet, Int8WeightOnlyConfig())
-                quantize_(self.pipe.vae, Int8WeightOnlyConfig())
-                logger.info("Applied int8 weight-only quantization to UNet and VAE")
-            elif quantization == QuantizationType.INT4_WEIGHT_ONLY:
-                quantize_(self.pipe.unet, Int4WeightOnlyConfig())
-                logger.info("Applied int4 weight-only quantization to UNet")
+                # Use version=2 to avoid deprecation warning
+                # Only quantize UNet, not VAE (VAE quantization causes black images)
+                from torchao.quantization import Int8WeightOnlyConfig
+
+                quantize_(self.pipe.unet, Int8WeightOnlyConfig(version=2))
+                logger.info("Applied int8 weight-only quantization to UNet")
             elif quantization == QuantizationType.FP8_WEIGHT_ONLY:
                 from torchao.quantization import Float8WeightOnlyConfig
 
@@ -199,43 +202,71 @@ class SDXLPipeline:
         except Exception as e:
             logger.warning(f"TorchAO quantization failed: {e}, continuing without quantization")
 
-    async def load_loras(self, lora_refs: list[str]) -> None:
+    async def load_loras(self, lora_configs: list) -> None:
         """Load LoRA weights.
 
         Args:
-            lora_refs: List of LoRA references (AIR URN or URL)
+            lora_configs: List of LoraConfig objects
         """
         if not self.pipe:
             raise RuntimeError("Pipeline not loaded")
 
-        for ref in lora_refs:
-            ref = ref.strip()
+        for lora_config in lora_configs:
+            ref = lora_config.ref.strip()
             if not ref:
                 continue
 
             logger.info(f"Loading LoRA: {ref}")
 
-            lora_ref = parse_model_ref(ref)
+            try:
+                lora_ref = parse_model_ref(ref)
 
-            if isinstance(lora_ref, AIRResource):
-                if lora_ref.source == ModelSource.CIVITAI:
-                    lora_path = await civitai_download(lora_ref)
+                if isinstance(lora_ref, AIRResource):
+                    if lora_ref.source == ModelSource.CIVITAI:
+                        lora_path = await civitai_download(lora_ref)
+                    else:
+                        raise ValueError(f"Unsupported LoRA source: {lora_ref.source}")
+                elif isinstance(lora_ref, URLResource):
+                    lora_path = await download_from_url(lora_ref)
                 else:
-                    raise ValueError(f"Unsupported LoRA source: {lora_ref.source}")
-            elif isinstance(lora_ref, URLResource):
-                lora_path = await download_from_url(lora_ref)
-            else:
-                raise ValueError(f"Unsupported LoRA reference type: {type(lora_ref)}")
+                    raise ValueError(f"Unsupported LoRA reference type: {type(lora_ref)}")
 
-            # Load LoRA weights
-            adapter_name = lora_path.stem
-            self.pipe.load_lora_weights(
-                str(lora_path.parent),
-                weight_name=lora_path.name,
-                adapter_name=adapter_name,
-            )
-            self.loaded_loras.append(adapter_name)
-            logger.info(f"LoRA loaded: {adapter_name}")
+                # Load LoRA weights
+                adapter_name = lora_path.stem
+
+                # Suppress PEFT warnings during loading
+                import warnings
+
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="Already found a `peft_config`")
+                    warnings.filterwarnings(
+                        "ignore", message="Adapter .* was active which is now deleted"
+                    )
+                    self.pipe.load_lora_weights(
+                        str(lora_path.parent),
+                        weight_name=lora_path.name,
+                        adapter_name=adapter_name,
+                    )
+                self.loaded_loras.append(adapter_name)
+                logger.info(f"LoRA loaded: {adapter_name}")
+
+            except RuntimeError:
+                # Handle incompatible LoRA (wrong architecture, size mismatch, etc.)
+                logger.warning(f"Failed to load LoRA {ref}: incompatible with model")
+                # Try to clean up partial adapter state
+                try:
+                    if hasattr(self.pipe, "delete_adapters"):
+                        adapter_name = lora_path.stem if "lora_path" in dir() else None
+                        if adapter_name:
+                            import warnings
+
+                            with warnings.catch_warnings():
+                                warnings.simplefilter("ignore")
+                                self.pipe.delete_adapters(adapter_name)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.warning(f"Failed to load LoRA {ref}: {e}")
 
     async def generate(
         self,
@@ -254,6 +285,47 @@ class SDXLPipeline:
         if not self.pipe:
             raise RuntimeError("Pipeline not loaded")
 
+        # Handle LoRA application
+        from txt2img.core.lora_manager import lora_manager
+
+        applied_loras = []
+        trigger_info = []  # List of (trigger_words, trigger_weight)
+
+        if params.loras:
+            # Collect trigger info and apply LoRAs
+            for lora_req in params.loras:
+                lora_id = lora_req.get("id") if isinstance(lora_req, dict) else lora_req
+                weight = lora_req.get("weight", 1.0) if isinstance(lora_req, dict) else 1.0
+                trigger_weight = (
+                    lora_req.get("trigger_weight", 0.5) if isinstance(lora_req, dict) else 0.5
+                )
+
+                lora_info = lora_manager.get_lora(lora_id)
+                if lora_info and lora_info.path:
+                    # Load LoRA if not already loaded
+                    adapter_name = lora_info.path.stem
+                    if adapter_name not in self.loaded_loras:
+                        self.pipe.load_lora_weights(
+                            str(lora_info.path.parent),
+                            weight_name=lora_info.path.name,
+                            adapter_name=adapter_name,
+                        )
+                        self.loaded_loras.append(adapter_name)
+                        logger.info(f"LoRA loaded: {adapter_name}")
+
+                    applied_loras.append({"name": adapter_name, "weight": weight})
+
+                    # Collect trigger words for separate embedding
+                    if lora_info.trigger_words and trigger_weight > 0:
+                        trigger_info.append((", ".join(lora_info.trigger_words), trigger_weight))
+
+            # Set LoRA scales if multiple
+            if applied_loras:
+                adapter_names = [lora["name"] for lora in applied_loras]
+                adapter_weights = [lora["weight"] for lora in applied_loras]
+                self.pipe.set_adapters(adapter_names, adapter_weights)
+                logger.info(f"Applied LoRAs: {applied_loras}")
+
         logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={params.steps}")
 
         # Set scheduler
@@ -266,24 +338,49 @@ class SDXLPipeline:
         generator = torch.Generator(device="cuda").manual_seed(seed)
         logger.info(f"Seed: {seed}")
 
-        # Simple generation without callback for debugging
-        logger.info("Calling pipeline...")
-        result = self.pipe(
-            prompt=params.prompt,
-            negative_prompt=params.negative_prompt,
-            width=params.width,
-            height=params.height,
-            num_inference_steps=params.steps,
-            guidance_scale=params.cfg_scale,
-            generator=generator,
+        # Compute embeddings with trigger word support and LPW->Compel conversion
+        (
+            prompt_embeds,
+            negative_prompt_embeds,
+            pooled_prompt_embeds,
+            negative_pooled_prompt_embeds,
+        ) = self._compute_embeddings_with_triggers(
+            params.prompt,
+            params.negative_prompt,
+            trigger_info,
         )
+
+        # Run pipeline in thread pool to avoid blocking event loop
+        import asyncio
+
+        def _run_pipeline():
+            return self.pipe(
+                prompt_embeds=prompt_embeds,
+                negative_prompt_embeds=negative_prompt_embeds,
+                pooled_prompt_embeds=pooled_prompt_embeds,
+                negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
+                width=params.width,
+                height=params.height,
+                num_inference_steps=params.steps,
+                guidance_scale=params.cfg_scale,
+                generator=generator,
+            )
+
+        logger.info("Calling pipeline...")
+        result = await asyncio.to_thread(_run_pipeline)
         logger.info("Pipeline completed")
 
         image: Image.Image = result.images[0]
 
-        # Save image with metadata
+        # Save image with metadata (include trigger info in saved prompt)
+        saved_prompt = params.prompt
+        if trigger_info:
+            triggers_str = ", ".join([t[0] for t in trigger_info])
+            saved_prompt = f"[Triggers: {triggers_str}] {params.prompt}"
+
+        lora_names = [lora["name"] for lora in applied_loras] if applied_loras else None
         metadata = ImageMetadata(
-            prompt=params.prompt,
+            prompt=saved_prompt,
             negative_prompt=params.negative_prompt,
             seed=seed,
             steps=params.steps,
@@ -292,12 +389,147 @@ class SDXLPipeline:
             height=params.height,
             sampler=params.sampler,
             model_name=self.model_name,
-            loras=self.loaded_loras if self.loaded_loras else None,
+            loras=lora_names,
         )
 
         saved = save_image(image, metadata)
 
         return saved
+
+    def _compute_embeddings_with_triggers(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        trigger_info: list[tuple[str, float]],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Compute embeddings with BREAK segment support and LPW->Compel conversion.
+
+        Supports both LPW (A1111) and Compel syntax in a unified way:
+        - LPW syntax (word:1.5) is converted to Compel syntax (word)1.5
+        - BREAK keyword splits prompt into segments that are concatenated
+        - Triggers are prepended as a separate segment
+
+        Args:
+            prompt: User prompt (LPW or Compel syntax)
+            negative_prompt: Negative prompt
+            trigger_info: List of (trigger_words, weight) tuples
+
+        Returns:
+            Tuple of (prompt_embeds, negative_prompt_embeds,
+                      pooled_prompt_embeds, negative_pooled_prompt_embeds)
+        """
+        import re
+        import warnings
+
+        from txt2img.core.prompt_parser import convert_a1111_to_compel
+
+        # Suppress Compel deprecation warnings
+        warnings.filterwarnings("ignore", message=".*passing multiple tokenizers.*")
+        warnings.filterwarnings("ignore", message=".*Token indices sequence length.*")
+
+        from compel import Compel, ReturnedEmbeddingsType
+
+        compel = Compel(
+            tokenizer=[self.pipe.tokenizer, self.pipe.tokenizer_2],
+            text_encoder=[self.pipe.text_encoder, self.pipe.text_encoder_2],
+            returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED,
+            requires_pooled=[False, True],
+            truncate_long_prompts=False,
+        )
+
+        # Split prompt by BREAK keyword
+        segments = re.split(r"\bBREAK\b", prompt, flags=re.IGNORECASE)
+        segments = [s.strip() for s in segments if s.strip()]
+
+        if not segments:
+            segments = [""]
+
+        # Convert each segment from LPW to Compel syntax and compute embeddings
+        segment_embeds = []
+        pooled = None
+
+        for segment in segments:
+            # Convert LPW syntax to Compel syntax
+            compel_segment = convert_a1111_to_compel(segment)
+            emb, pool = compel(compel_segment)
+            segment_embeds.append(emb)
+            if pooled is None:
+                pooled = pool
+
+        # Concatenate all segment embeddings
+        if len(segment_embeds) > 1:
+            prompt_embeds = torch.cat(segment_embeds, dim=1)
+            logger.info(
+                f"Concatenated {len(segment_embeds)} BREAK segments, total tokens: {prompt_embeds.shape[1]}"
+            )
+        else:
+            prompt_embeds = segment_embeds[0]
+
+        pooled_prompt_embeds = pooled
+
+        # Prepend trigger embeddings if any
+        if trigger_info:
+            trigger_parts = []
+            for trigger_words, weight in trigger_info:
+                if weight > 0:
+                    # Convert trigger words too (in case they have weights)
+                    compel_trigger = convert_a1111_to_compel(trigger_words)
+                    trigger_emb, _ = compel(compel_trigger)
+                    trigger_parts.append(trigger_emb * weight)
+
+            if trigger_parts:
+                if len(trigger_parts) > 1:
+                    total_trigger = torch.stack(trigger_parts).mean(dim=0)
+                else:
+                    total_trigger = trigger_parts[0]
+
+                prompt_embeds = torch.cat([total_trigger, prompt_embeds], dim=1)
+                logger.info(
+                    f"Prepended trigger embeddings: {len(trigger_info)} triggers, "
+                    f"total tokens: {prompt_embeds.shape[1]}"
+                )
+
+        # Process negative prompt (with BREAK support)
+        neg_segments = re.split(r"\bBREAK\b", negative_prompt or "", flags=re.IGNORECASE)
+        neg_segments = [s.strip() for s in neg_segments if s.strip()]
+
+        if neg_segments:
+            neg_embeds = []
+            neg_pooled = None
+            for seg in neg_segments:
+                compel_seg = convert_a1111_to_compel(seg)
+                emb, pool = compel(compel_seg)
+                neg_embeds.append(emb)
+                if neg_pooled is None:
+                    neg_pooled = pool
+            negative_prompt_embeds = (
+                torch.cat(neg_embeds, dim=1) if len(neg_embeds) > 1 else neg_embeds[0]
+            )
+            negative_pooled_prompt_embeds = neg_pooled
+        else:
+            negative_prompt_embeds, negative_pooled_prompt_embeds = compel("")
+
+        # Pad negative to match prompt length
+        if negative_prompt_embeds.shape[1] != prompt_embeds.shape[1]:
+            if negative_prompt_embeds.shape[1] < prompt_embeds.shape[1]:
+                padding = torch.zeros(
+                    1,
+                    prompt_embeds.shape[1] - negative_prompt_embeds.shape[1],
+                    negative_prompt_embeds.shape[2],
+                    device=negative_prompt_embeds.device,
+                    dtype=negative_prompt_embeds.dtype,
+                )
+                negative_prompt_embeds = torch.cat([negative_prompt_embeds, padding], dim=1)
+            else:
+                negative_prompt_embeds = negative_prompt_embeds[:, : prompt_embeds.shape[1], :]
+            logger.info(f"Padded negative embeddings: {negative_prompt_embeds.shape[1]} tokens")
+
+        return (
+            prompt_embeds,
+            negative_prompt_embeds,
+            pooled_prompt_embeds,
+            negative_pooled_prompt_embeds,
+        )
 
 
 # Global pipeline instance

@@ -3,13 +3,33 @@
     "type": "sdxl",
     "model": "urn:air:sdxl:checkpoint:civitai:823763@1892440",
     "vae": null,
-    "loras": [],
+    "loras": [
+        {
+            "ref": "urn:air:sdxl:lora:civitai:1377820@1963644"
+        },
+        {
+            "ref": "https://huggingface.co/datasets/beamman/hakidame_lora/resolve/main/hk_szk001-000020.safetensors",
+            "triggers": [
+                "hk_szk",
+                "1girl",
+                "red eyes",
+                "daemon girl",
+                "horns",
+                "daemon tail",
+                "pink long hair",
+                "gradient hair",
+                "medium breasts",
+                "(messy hair:0.5)"
+            ],
+            "weight": 0.8,
+            "trigger_weight": 1
+        }
+    ],
     "quantization": "none",
-    "vae_tiling": false,
+    "vae_tiling": true,
     "training_resolution": 1536,
     "default_steps": 20,
     "default_cfg": 7.0,
     "default_sampler": "euler_a",
-    "output_format": "webp",
-    "prompt_parser": "compel"
+    "output_format": "webp"
 }
