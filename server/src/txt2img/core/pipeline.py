@@ -49,7 +49,8 @@ class SDXLPipeline:
     def __init__(self) -> None:
         self.pipe: StableDiffusionXLPipeline | None = None
         self.model_name: str = ""
-        self.loaded_loras: list[str] = []
+        self.loaded_loras: list[str] = []  # All LoRAs loaded in memory
+        self.last_used_loras: set[str] = set()  # LoRAs used in last generation
         self._quantized = False
 
     async def load_model(self) -> None:
@@ -77,19 +78,23 @@ class SDXLPipeline:
         # Enable memory optimizations
         self.pipe.vae.enable_slicing()
 
+        # Disable VAE upcast to float32 (saves VRAM, prevents spikes)
+        if hasattr(self.pipe.vae.config, "force_upcast"):
+            self.pipe.vae.config.force_upcast = False
+            logger.info("VAE force_upcast disabled")
+
         if config.vae_tiling:
             self.pipe.vae.enable_tiling()
             logger.info("VAE tiling enabled")
 
-        # Load LoRAs BEFORE quantization (quantization breaks LoRA loading)
-        if config.loras:
-            await self.load_loras(config.loras)
+        # LoRAs are loaded on-demand during generation (not at startup)
+        # This saves VRAM when LoRAs are not immediately needed
 
-        # Apply quantization AFTER LoRA loading
+        # Apply quantization (skip if LoRAs might be used later)
         # WARNING: TorchAO quantization + PEFT LoRA causes black images
-        if config.loras and self.loaded_loras and config.quantization != QuantizationType.NONE:
+        if config.loras and config.quantization != QuantizationType.NONE:
             logger.warning(
-                "Quantization disabled: LoRA + TorchAO quantization causes black images. "
+                "Quantization disabled: LoRA is configured and quantization causes black images. "
                 "See README for details."
             )
         elif config.quantization != QuantizationType.NONE:
@@ -319,12 +324,18 @@ class SDXLPipeline:
                     if lora_info.trigger_words and trigger_weight > 0:
                         trigger_info.append((", ".join(lora_info.trigger_words), trigger_weight))
 
-            # Set LoRA scales if multiple
+            # Set LoRA scales for requested LoRAs only
             if applied_loras:
                 adapter_names = [lora["name"] for lora in applied_loras]
                 adapter_weights = [lora["weight"] for lora in applied_loras]
+                self.pipe.enable_lora()  # Re-enable in case it was disabled
                 self.pipe.set_adapters(adapter_names, adapter_weights)
                 logger.info(f"Applied LoRAs: {applied_loras}")
+        else:
+            # No LoRAs requested - disable all adapters
+            if self.loaded_loras:
+                self.pipe.disable_lora()
+                logger.info("Disabled all LoRA adapters (none requested)")
 
         logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={params.steps}")
 
@@ -354,17 +365,18 @@ class SDXLPipeline:
         import asyncio
 
         def _run_pipeline():
-            return self.pipe(
-                prompt_embeds=prompt_embeds,
-                negative_prompt_embeds=negative_prompt_embeds,
-                pooled_prompt_embeds=pooled_prompt_embeds,
-                negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
-                width=params.width,
-                height=params.height,
-                num_inference_steps=params.steps,
-                guidance_scale=params.cfg_scale,
-                generator=generator,
-            )
+            with torch.inference_mode():
+                return self.pipe(
+                    prompt_embeds=prompt_embeds,
+                    negative_prompt_embeds=negative_prompt_embeds,
+                    pooled_prompt_embeds=pooled_prompt_embeds,
+                    negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
+                    width=params.width,
+                    height=params.height,
+                    num_inference_steps=params.steps,
+                    guidance_scale=params.cfg_scale,
+                    generator=generator,
+                )
 
         logger.info("Calling pipeline...")
         result = await asyncio.to_thread(_run_pipeline)
@@ -393,6 +405,26 @@ class SDXLPipeline:
         )
 
         saved = save_image(image, metadata)
+
+        # Track current LoRA usage and unload unused ones
+        current_loras = {lora["name"] for lora in applied_loras} if applied_loras else set()
+
+        if current_loras != self.last_used_loras:
+            # Unload LoRAs that were used last time but not this time
+            loras_to_unload = self.last_used_loras - current_loras
+            for adapter_name in loras_to_unload:
+                if adapter_name in self.loaded_loras:
+                    try:
+                        self.pipe.delete_adapters(adapter_name)
+                        self.loaded_loras.remove(adapter_name)
+                        logger.info(f"Unloaded LoRA: {adapter_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to unload LoRA {adapter_name}: {e}")
+
+            self.last_used_loras = current_loras
+
+        # Clear CUDA cache to release temporary VRAM
+        torch.cuda.empty_cache()
 
         return saved
 
@@ -448,13 +480,14 @@ class SDXLPipeline:
         segment_embeds = []
         pooled = None
 
-        for segment in segments:
-            # Convert LPW syntax to Compel syntax
-            compel_segment = convert_a1111_to_compel(segment)
-            emb, pool = compel(compel_segment)
-            segment_embeds.append(emb)
-            if pooled is None:
-                pooled = pool
+        with torch.inference_mode():
+            for segment in segments:
+                # Convert LPW syntax to Compel syntax
+                compel_segment = convert_a1111_to_compel(segment)
+                emb, pool = compel(compel_segment)
+                segment_embeds.append(emb)
+                if pooled is None:
+                    pooled = pool
 
         # Concatenate all segment embeddings
         if len(segment_embeds) > 1:
@@ -470,12 +503,13 @@ class SDXLPipeline:
         # Prepend trigger embeddings if any
         if trigger_info:
             trigger_parts = []
-            for trigger_words, weight in trigger_info:
-                if weight > 0:
-                    # Convert trigger words too (in case they have weights)
-                    compel_trigger = convert_a1111_to_compel(trigger_words)
-                    trigger_emb, _ = compel(compel_trigger)
-                    trigger_parts.append(trigger_emb * weight)
+            with torch.inference_mode():
+                for trigger_words, weight in trigger_info:
+                    if weight > 0:
+                        # Convert trigger words too (in case they have weights)
+                        compel_trigger = convert_a1111_to_compel(trigger_words)
+                        trigger_emb, _ = compel(compel_trigger)
+                        trigger_parts.append(trigger_emb * weight)
 
             if trigger_parts:
                 if len(trigger_parts) > 1:
@@ -496,18 +530,20 @@ class SDXLPipeline:
         if neg_segments:
             neg_embeds = []
             neg_pooled = None
-            for seg in neg_segments:
-                compel_seg = convert_a1111_to_compel(seg)
-                emb, pool = compel(compel_seg)
-                neg_embeds.append(emb)
-                if neg_pooled is None:
-                    neg_pooled = pool
+            with torch.inference_mode():
+                for seg in neg_segments:
+                    compel_seg = convert_a1111_to_compel(seg)
+                    emb, pool = compel(compel_seg)
+                    neg_embeds.append(emb)
+                    if neg_pooled is None:
+                        neg_pooled = pool
             negative_prompt_embeds = (
                 torch.cat(neg_embeds, dim=1) if len(neg_embeds) > 1 else neg_embeds[0]
             )
             negative_pooled_prompt_embeds = neg_pooled
         else:
-            negative_prompt_embeds, negative_pooled_prompt_embeds = compel("")
+            with torch.inference_mode():
+                negative_prompt_embeds, negative_pooled_prompt_embeds = compel("")
 
         # Pad negative to match prompt length
         if negative_prompt_embeds.shape[1] != prompt_embeds.shape[1]:
