@@ -27,14 +27,89 @@ task up
 
 Edit `.env` file:
 
-| Variable              | Description                | Required        |
-| --------------------- | -------------------------- | --------------- |
-| `MODEL`               | Civitai AIR URN or HF repo | ✓               |
-| `CIVITAI_API_KEY`     | Civitai API key            | For some models |
-| `TRAINING_RESOLUTION` | `1024` or `1024x1024`      |                 |
-| `PROMPT_PARSER`       | `lpw` or `compel`          |                 |
+| Variable          | Description                | Required        |
+| ----------------- | -------------------------- | --------------- |
+| `CONFIG`          | Preset path or JSON config | ✓               |
+| `CIVITAI_API_KEY` | Civitai API key            | For some models |
+| `HF_TOKEN`        | HuggingFace token          | For some models |
 
 See [.env.example](.env.example) for all options.
+
+## Supported Models
+
+| Type           | Description                                     | Example Preset     |
+| -------------- | ----------------------------------------------- | ------------------ |
+| `sdxl`         | SDXL and derivatives (Illustrious, etc.)        | `sdxl/illustrious` |
+| `flux`         | Flux.1 [dev] - guidance-distilled (~50 steps)   | `flux/dev`         |
+| `flux_schnell` | Flux.1 [schnell] - timestep-distilled (4 steps) | `flux/schnell`     |
+| `chroma`       | Chroma - 8.9B lightweight Flux variant          | `chroma/flash`     |
+| `zimage`       | Z-Image Turbo - 6B fast model (8 steps)         | `zimage/turbo`     |
+
+## Preset Configuration
+
+Presets are JSON files in `server/presets/`. See
+[config.schema.json](server/presets/config.schema.json) for full schema.
+
+### SDXL Example
+
+```json
+{
+    "$schema": "../config.schema.json",
+    "type": "sdxl",
+    "model": "urn:air:sdxl:checkpoint:civitai:827184@2514310",
+    "vae": null,
+    "loras": [
+        { "ref": "urn:air:sdxl:lora:civitai:1377820@1963644" }
+    ],
+    "training_resolution": 1024,
+    "default_steps": 20,
+    "default_cfg": 7.0,
+    "default_sampler": "euler_a",
+    "output_format": "webp"
+}
+```
+
+### Model Reference Formats
+
+- **Civitai AIR**: `urn:air:sdxl:checkpoint:civitai:827184@2514310`
+- **HuggingFace**: `black-forest-labs/FLUX.1-dev`
+- **URL**: `https://example.com/model.safetensors`
+- **Local**: `file:///path/to/model.safetensors`
+
+## LoRA Configuration
+
+LoRAs are specified as an array of objects in preset files:
+
+```json
+{
+    "loras": [
+        { "ref": "urn:air:sdxl:lora:civitai:1377820@1963644" },
+        {
+            "ref": "https://example.com/lora.safetensors",
+            "triggers": ["mytrigger"],
+            "weight": 1.0,
+            "trigger_weight": 0.5
+        }
+    ]
+}
+```
+
+| Property         | Description                                           | Default |
+| ---------------- | ----------------------------------------------------- | ------- |
+| `ref`            | Civitai AIR URN or URL (required)                     | -       |
+| `triggers`       | Trigger words (auto-detected from Civitai if omitted) | `null`  |
+| `weight`         | LoRA model weight                                     | `1.0`   |
+| `trigger_weight` | Trigger embedding weight                              | `0.5`   |
+
+### API Usage
+
+```json
+{
+    "loras": [
+        { "id": "civitai_1963644", "weight": 1.0, "trigger_weight": 0.5 }
+    ]
+}
+```
 
 ## Task Commands
 
@@ -47,10 +122,17 @@ task logs         # View logs
 task reset        # Reset server data
 ```
 
-## Endpoints
+## API Endpoints
 
-- `http://localhost:8000` - API server
-- `http://localhost:3000` - Web client
+| Endpoint                 | Method | Description                     |
+| ------------------------ | ------ | ------------------------------- |
+| `/health`                | GET    | Health check                    |
+| `/api/info`              | GET    | Server info (model, LoRAs, etc) |
+| `/api/generate`          | POST   | Create generation job           |
+| `/api/sse/{job_id}`      | GET    | SSE progress updates            |
+| `/api/images`            | GET    | List generated images           |
+| `/api/images/{id}.{ext}` | GET    | Get full image                  |
+| `/api/thumbs/{id}.webp`  | GET    | Get thumbnail                   |
 
 ## Project Structure
 
@@ -60,62 +142,31 @@ txt2img/
 ├── Taskfile.yml
 ├── start.sh
 ├── .env.example
-├── server/           # Python/FastAPI backend
+├── server/                   # Python/FastAPI backend
 │   ├── pyproject.toml
+│   ├── presets/              # Model presets
+│   │   ├── config.schema.json
+│   │   ├── sdxl/
+│   │   ├── flux/
+│   │   ├── chroma/
+│   │   └── zimage/
 │   └── src/txt2img/
-└── client/           # React/Vite frontend
-    ├── package.json
-    └── src/
+│       ├── main.py           # FastAPI entrypoint
+│       ├── config.py         # Configuration
+│       ├── api/              # API layer
+│       ├── core/             # Core modules
+│       │   ├── job_queue.py
+│       │   ├── lora_manager.py
+│       │   ├── prompt_parser.py
+│       │   └── image_processor.py
+│       ├── pipelines/        # Model pipelines
+│       │   ├── sdxl.py
+│       │   ├── flux_dev.py
+│       │   ├── flux_schnell.py
+│       │   ├── chroma.py
+│       │   └── zimage.py
+│       └── providers/        # Model providers
+│           ├── civitai.py
+│           └── huggingface.py
+└── outputs/                  # Generated images
 ```
-
-## LoRA Configuration
-
-In preset files, LoRAs are specified as an array of objects:
-
-```json
-{
-    "loras": [
-        { "ref": "urn:air:sdxl:lora:civitai:1377820@1963644" },
-        {
-            "ref": "https://example.com/lora.safetensors",
-            "triggers": ["mytrigger", "custom_tag"]
-        }
-    ]
-}
-```
-
-- `ref` (required): Civitai AIR URN or direct URL
-- `triggers` (optional): Manual trigger words. If omitted, auto-detected from
-  Civitai API
-
-### API Usage
-
-```json
-{
-    "loras": [
-        { "id": "civitai_1963644", "weight": 1.0, "trigger_weight": 0.5 }
-    ]
-}
-```
-
-- `weight`: LoRA model weight (overall influence)
-- `trigger_weight`: Trigger embedding weight (target influence), set to 0 to
-  disable
-
-## Known Issues
-
-### LoRA + Quantization Causes Black Images
-
-**Problem**: Using TorchAO quantization (`int8wo`, `fp8wo`) together with LoRAs
-produces completely black images.
-
-**Cause**: TorchAO's `quantize_()` replaces Linear layers with quantized
-tensors, which conflicts with PEFT's LoRA adapter injection mechanism.
-
-**Workaround**: The server automatically disables quantization when LoRAs are
-loaded. If you need both:
-
-- Use quantization without LoRAs, OR
-- Use LoRAs without quantization
-
-This is a known upstream compatibility issue between TorchAO and PEFT.
