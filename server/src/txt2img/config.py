@@ -30,12 +30,30 @@ class QuantizationType(str, Enum):
     FP8_WEIGHT_ONLY = "fp8wo"
 
 
+class OffloadMode(str, Enum):
+    """CPU offloading mode for VRAM optimization."""
+
+    NONE = "none"  # Full GPU (requires most VRAM)
+    MODEL = "model"  # Component-level offload (balanced)
+    SEQUENTIAL = "sequential"  # Layer-level offload (least VRAM, slowest)
+
+
+class TextEncoderPrecision(str, Enum):
+    """Text encoder precision for memory optimization."""
+
+    DEFAULT = "default"  # Use model default (usually bf16)
+    FP8 = "fp8"  # FP8 layerwise casting (50% memory reduction)
+
+
 class ModelType(str, Enum):
     """Model architecture type (follows AIR naming)."""
 
     SDXL = "sdxl"  # Stable Diffusion XL and derivatives (Illustrious, etc.)
     SD3 = "sd3"  # Stable Diffusion 3.x
-    FLUX = "flux"  # Flux.1 / Flux 2
+    FLUX = "flux"  # Flux.1 [dev] - guidance-distilled (50 steps)
+    FLUX_SCHNELL = "flux_schnell"  # Flux.1 [schnell] - timestep-distilled (4 steps)
+    CHROMA = "chroma"  # Chroma - 8.9B lightweight Flux variant
+    ZIMAGE = "zimage"  # Z-Image Turbo - 6B fast (8 steps, 16GB VRAM)
 
 
 @dataclass
@@ -76,6 +94,8 @@ class ModelConfig:
 
     # Performance
     quantization: QuantizationType = QuantizationType.NONE
+    offload: OffloadMode = OffloadMode.NONE
+    text_encoder_precision: TextEncoderPrecision = TextEncoderPrecision.DEFAULT
     vae_tiling: bool = False
 
     # Generation defaults
@@ -95,6 +115,10 @@ class ModelConfig:
             data["type"] = ModelType(data["type"])
         if "quantization" in data and isinstance(data["quantization"], str):
             data["quantization"] = QuantizationType(data["quantization"])
+        if "offload" in data and isinstance(data["offload"], str):
+            data["offload"] = OffloadMode(data["offload"])
+        if "text_encoder_precision" in data and isinstance(data["text_encoder_precision"], str):
+            data["text_encoder_precision"] = TextEncoderPrecision(data["text_encoder_precision"])
         if "output_format" in data and isinstance(data["output_format"], str):
             data["output_format"] = OutputFormat(data["output_format"])
 

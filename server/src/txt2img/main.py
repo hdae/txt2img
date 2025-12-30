@@ -38,7 +38,11 @@ class EmojiFormatter(logging.Formatter):
         "txt2img.providers.civitai": "📥",  # Download
         "txt2img.providers.huggingface": "📥",  # Download
         "txt2img.core.lora_manager": "🎨",  # LoRA
-        "txt2img.pipelines.sdxl": "🖼️ ",  # Generation
+        "txt2img.pipelines.sdxl": "🖼️ ",  # SDXL Generation
+        "txt2img.pipelines.flux_dev": "🖼️ ",  # Flux Generation
+        "txt2img.pipelines.flux_schnell": "🖼️ ",  # Flux Generation
+        "txt2img.pipelines.chroma": "🖼️ ",  # Chroma Generation
+        "txt2img.pipelines.zimage": "🖼️ ",  # Z-Image Generation
         "txt2img.core.job_queue": "📋",  # Jobs
         "txt2img.core.image_processor": "💾",  # Save
         "txt2img.api.router": "🌐",  # API

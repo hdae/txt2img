@@ -1,0 +1,7 @@
+{
+    "$schema": "../config.schema.json",
+    "type": "zimage",
+    "model": "Tongyi-MAI/Z-Image-Turbo",
+    "default_steps": 8,
+    "output_format": "webp"
+}

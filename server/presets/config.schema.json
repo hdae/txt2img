@@ -1,10 +1,10 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "$id": "https://txt2img.local/schemas/config.json",
     "title": "txt2img Model Configuration",
-    "description": "Configuration schema for txt2img model settings",
+    "description": "Configuration for txt2img model presets",
     "type": "object",
     "required": [
+        "type",
         "model"
     ],
     "properties": {
@@ -13,18 +13,20 @@
             "enum": [
                 "sdxl",
                 "sd3",
-                "flux"
+                "flux",
+                "flux_schnell",
+                "chroma",
+                "zimage"
             ],
-            "default": "sdxl",
-            "description": "Model architecture type (AIR naming convention)"
+            "description": "Model architecture type"
         },
         "model": {
             "type": "string",
-            "description": "Model reference: Civitai AIR URN (urn:air:...), HuggingFace repo (org/repo), or URL",
+            "description": "Model reference: Civitai AIR URN, HuggingFace repo, or URL",
             "examples": [
-                "urn:air:sdxl:checkpoint:civitai:827184@2514310",
-                "stabilityai/stable-diffusion-xl-base-1.0",
-                "https://example.com/model.safetensors"
+                "urn:air:sdxl:checkpoint:civitai:827184@1469915",
+                "black-forest-labs/FLUX.1-schnell",
+                "lodestones/Chroma1-Flash"
             ]
         },
         "vae": {
@@ -33,106 +35,71 @@
                 "null"
             ],
             "default": null,
-            "description": "VAE override: null (use embedded), Civitai AIR, HuggingFace repo, or URL",
-            "examples": [
-                null,
-                "urn:air:sdxl:vae:civitai:1684460@1906483",
-                "madebyollin/sdxl-vae-fp16-fix"
-            ]
+            "description": "Custom VAE (SDXL only). Null uses model's embedded VAE"
         },
         "loras": {
             "type": "array",
             "items": {
-                "type": "object",
-                "properties": {
-                    "ref": {
-                        "type": "string",
-                        "description": "LoRA reference (Civitai AIR URN or URL)"
+                "oneOf": [
+                    {
+                        "type": "string"
                     },
-                    "triggers": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
+                    {
+                        "type": "object",
+                        "properties": {
+                            "ref": {
+                                "type": "string"
+                            },
+                            "triggers": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "weight": {
+                                "type": "number",
+                                "default": 1.0
+                            }
                         },
-                        "description": "Manual trigger words (optional, auto-detected from Civitai if not specified)"
-                    },
-                    "weight": {
-                        "type": "number",
-                        "default": 1.0,
-                        "minimum": 0.0,
-                        "maximum": 2.0,
-                        "description": "Recommended LoRA weight (overall influence)"
-                    },
-                    "trigger_weight": {
-                        "type": "number",
-                        "default": 0.5,
-                        "minimum": 0.0,
-                        "maximum": 2.0,
-                        "description": "Recommended trigger embedding weight (target influence)"
+                        "required": [
+                            "ref"
+                        ]
                     }
-                },
-                "required": [
-                    "ref"
                 ]
             },
             "default": [],
-            "description": "List of LoRA configurations"
-        },
-        "quantization": {
-            "type": "string",
-            "enum": [
-                "none",
-                "int8wo",
-                "fp8wo"
-            ],
-            "default": "none",
-            "description": "TorchAO quantization type: none, int8 weight-only, fp8 weight-only"
-        },
-        "vae_tiling": {
-            "type": "boolean",
-            "default": false,
-            "description": "Enable VAE tiling for reduced VRAM usage"
+            "description": "LoRA configurations (SDXL only)"
         },
         "training_resolution": {
             "type": "integer",
             "default": 1024,
-            "minimum": 512,
-            "maximum": 2048,
-            "description": "Model's training resolution in pixels"
+            "description": "Model's training resolution (SDXL only)"
         },
         "default_steps": {
             "type": "integer",
-            "default": 20,
             "minimum": 1,
             "maximum": 150,
-            "description": "Default number of inference steps"
+            "description": "Default inference steps. Optimal values vary by model type"
         },
         "default_cfg": {
             "type": "number",
-            "default": 7.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "maximum": 30.0,
-            "description": "Default CFG scale (guidance scale)"
+            "description": "Default CFG scale. Some models (schnell, zimage) ignore this"
         },
         "default_sampler": {
             "type": "string",
-            "enum": [
-                "euler",
-                "euler_a",
-                "dpm++_2m"
-            ],
             "default": "euler",
-            "description": "Default sampler/scheduler"
+            "description": "Default sampler (SDXL only)"
         },
         "output_format": {
             "type": "string",
             "enum": [
-                "webp",
-                "png"
+                "png",
+                "webp"
             ],
             "default": "webp",
             "description": "Output image format"
         }
-    },
-    "additionalProperties": true
+    }
 }

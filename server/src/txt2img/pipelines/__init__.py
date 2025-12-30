@@ -22,7 +22,21 @@ def get_pipeline() -> BasePipeline:
         elif config.type == ModelType.SD3:
             raise NotImplementedError("SD3 pipeline not yet implemented")
         elif config.type == ModelType.FLUX:
-            raise NotImplementedError("Flux pipeline not yet implemented")
+            from txt2img.pipelines.flux_dev import FluxDevPipeline
+
+            _pipeline = FluxDevPipeline()
+        elif config.type == ModelType.FLUX_SCHNELL:
+            from txt2img.pipelines.flux_schnell import FluxSchnellPipeline
+
+            _pipeline = FluxSchnellPipeline()
+        elif config.type == ModelType.CHROMA:
+            from txt2img.pipelines.chroma import ChromaPipelineImpl
+
+            _pipeline = ChromaPipelineImpl()
+        elif config.type == ModelType.ZIMAGE:
+            from txt2img.pipelines.zimage import ZImagePipelineImpl
+
+            _pipeline = ZImagePipelineImpl()
         else:
             raise ValueError(f"Unsupported model type: {config.type}")
     return _pipeline

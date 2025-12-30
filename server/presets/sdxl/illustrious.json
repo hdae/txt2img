@@ -1,0 +1,12 @@
+{
+    "$schema": "../config.schema.json",
+    "type": "sdxl",
+    "model": "urn:air:sdxl:checkpoint:civitai:827184@1469915",
+    "vae": null,
+    "loras": [],
+    "training_resolution": 1024,
+    "default_steps": 30,
+    "default_cfg": 5.0,
+    "default_sampler": "euler_a",
+    "output_format": "webp"
+}

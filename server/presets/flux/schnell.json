@@ -1,0 +1,7 @@
+{
+    "$schema": "../config.schema.json",
+    "type": "flux_schnell",
+    "model": "black-forest-labs/FLUX.1-schnell",
+    "default_steps": 4,
+    "output_format": "webp"
+}
