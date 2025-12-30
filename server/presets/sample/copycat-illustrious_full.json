@@ -29,5 +29,6 @@
     "default_steps": 20,
     "default_cfg": 7.0,
     "default_sampler": "euler_a",
-    "output_format": "webp"
+    "output_format": "webp",
+    "vram_profile": "full"
 }

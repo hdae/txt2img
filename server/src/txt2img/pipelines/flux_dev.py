@@ -9,7 +9,7 @@ import torch
 from diffusers import FluxPipeline
 from PIL import Image
 
-from txt2img.config import get_model_config, get_settings
+from txt2img.config import VramProfile, get_model_config, get_settings
 from txt2img.core.base_pipeline import BasePipeline
 from txt2img.core.image_processor import ImageMetadata, SavedImage, save_image
 from txt2img.core.job_queue import GenerationParams
@@ -88,10 +88,39 @@ class FluxDevPipeline(BasePipeline):
         else:
             raise ValueError(f"Unsupported model reference type: {type(model_ref)}")
 
-        # Move to GPU
-        self.pipe = self.pipe.to("cuda")
+        # Apply VRAM profile
+        self._apply_vram_profile(config.vram_profile)
 
         logger.info(f"Flux.1 [dev] model loaded: {self._model_name}")
+
+    def _apply_vram_profile(self, profile: VramProfile) -> None:
+        """Apply VRAM optimization based on profile."""
+        if not self.pipe:
+            return
+
+        logger.info(f"Applying VRAM profile: {profile.value}")
+
+        if profile == VramProfile.FULL:
+            self.pipe = self.pipe.to("cuda")
+            logger.info("VRAM profile: FULL - no offloading")
+
+        elif profile == VramProfile.BALANCED:
+            self.pipe.enable_model_cpu_offload()
+            self.pipe.vae.enable_tiling()
+            logger.info("VRAM profile: BALANCED - model offload + VAE tiling")
+
+        elif profile == VramProfile.LOWVRAM:
+            self.pipe.transformer.enable_group_offload(
+                onload_device=torch.device("cuda"),
+                offload_device=torch.device("cpu"),
+                offload_type="leaf_level",
+                use_stream=True,
+            )
+            for name, component in self.pipe.components.items():
+                if name != "transformer" and isinstance(component, torch.nn.Module):
+                    component.cuda()
+            self.pipe.vae.enable_tiling()
+            logger.info("VRAM profile: LOWVRAM - group offload + VAE tiling")
 
     async def generate(
         self,

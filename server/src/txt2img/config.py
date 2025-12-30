@@ -22,27 +22,17 @@ class OutputFormat(str, Enum):
     WEBP = "webp"
 
 
-class QuantizationType(str, Enum):
-    """Quantization type for model optimization."""
+class VramProfile(str, Enum):
+    """VRAM optimization profile.
 
-    NONE = "none"
-    INT8_WEIGHT_ONLY = "int8wo"
-    FP8_WEIGHT_ONLY = "fp8wo"
+    - FULL: No offloading, maximum speed (requires most VRAM)
+    - BALANCED: Model-level CPU offload + VAE tiling (moderate VRAM)
+    - LOWVRAM: Group offload with streaming + VAE tiling (least VRAM)
+    """
 
-
-class OffloadMode(str, Enum):
-    """CPU offloading mode for VRAM optimization."""
-
-    NONE = "none"  # Full GPU (requires most VRAM)
-    MODEL = "model"  # Component-level offload (balanced)
-    SEQUENTIAL = "sequential"  # Layer-level offload (least VRAM, slowest)
-
-
-class TextEncoderPrecision(str, Enum):
-    """Text encoder precision for memory optimization."""
-
-    DEFAULT = "default"  # Use model default (usually bf16)
-    FP8 = "fp8"  # FP8 layerwise casting (50% memory reduction)
+    FULL = "full"  # 24GB+ for Flux, 12GB+ for SDXL
+    BALANCED = "balanced"  # 12-16GB for Flux, 8GB for SDXL
+    LOWVRAM = "lowvram"  # 8GB for Flux, 6GB for SDXL
 
 
 class ModelType(str, Enum):
@@ -92,11 +82,8 @@ class ModelConfig:
     # LoRAs (string or object with ref + triggers)
     loras: list[LoraConfig] = field(default_factory=list)
 
-    # Performance
-    quantization: QuantizationType = QuantizationType.NONE
-    offload: OffloadMode = OffloadMode.NONE
-    text_encoder_precision: TextEncoderPrecision = TextEncoderPrecision.DEFAULT
-    vae_tiling: bool = False
+    # VRAM optimization
+    vram_profile: VramProfile = VramProfile.BALANCED
 
     # Generation defaults
     training_resolution: int = 1024
@@ -113,12 +100,8 @@ class ModelConfig:
         # Handle enum conversions
         if "type" in data and isinstance(data["type"], str):
             data["type"] = ModelType(data["type"])
-        if "quantization" in data and isinstance(data["quantization"], str):
-            data["quantization"] = QuantizationType(data["quantization"])
-        if "offload" in data and isinstance(data["offload"], str):
-            data["offload"] = OffloadMode(data["offload"])
-        if "text_encoder_precision" in data and isinstance(data["text_encoder_precision"], str):
-            data["text_encoder_precision"] = TextEncoderPrecision(data["text_encoder_precision"])
+        if "vram_profile" in data and isinstance(data["vram_profile"], str):
+            data["vram_profile"] = VramProfile(data["vram_profile"])
         if "output_format" in data and isinstance(data["output_format"], str):
             data["output_format"] = OutputFormat(data["output_format"])
 
@@ -139,8 +122,7 @@ class ModelConfig:
             "model": self.model,
             "vae": self.vae,
             "loras": self.loras,
-            "quantization": self.quantization.value,
-            "vae_tiling": self.vae_tiling,
+            "vram_profile": self.vram_profile.value,
             "training_resolution": self.training_resolution,
             "default_steps": self.default_steps,
             "default_cfg": self.default_cfg,

@@ -76,6 +76,24 @@ Presets are JSON files in `server/presets/`. See
 - **URL**: `https://example.com/model.safetensors`
 - **Local**: `file:///path/to/model.safetensors`
 
+### VRAM Profiles
+
+Optimize VRAM usage with the `vram_profile` setting:
+
+| Profile    | VRAM Target | Optimization                           |
+| ---------- | ----------- | -------------------------------------- |
+| `full`     | 24GB+       | No offloading (maximum speed)          |
+| `balanced` | 12-16GB     | Model CPU offload + VAE tiling         |
+| `lowvram`  | 8GB         | Group offload (streaming) + VAE tiling |
+
+Default is `balanced`. Set in preset:
+
+```json
+{
+    "vram_profile": "lowvram"
+}
+```
+
 ## LoRA Configuration
 
 LoRAs are specified as an array of objects in preset files:

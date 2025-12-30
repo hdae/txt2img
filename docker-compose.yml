@@ -22,6 +22,8 @@ services:
       - MODEL_CACHE_DIR=/workspace/models
       - OUTPUT_DIR=/workspace/outputs
       - PRESETS_DIR=/workspace/app/presets
+      # HuggingFace cache
+      - HF_HOME=/workspace/.hf-cache
     volumes:
       # Persistent storage
       - server-data:/workspace
@@ -31,6 +33,9 @@ services:
 
       # Model cache (Shared)
       - model-cache:/workspace/models
+
+      # HuggingFace cache (Shared)
+      - hf-cache:/workspace/.hf-cache
 
       # Output directory (host mount)
       - ./outputs:/workspace/outputs
@@ -64,6 +69,7 @@ services:
 volumes:
   server-data:
   model-cache:
+  hf-cache:
   uv-cache:
     name: shared_uv-cache
     external: true

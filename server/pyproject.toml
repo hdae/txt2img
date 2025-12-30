@@ -25,6 +25,9 @@ dependencies = [
     # Required for Flux.1
     "protobuf==6.33.2",
     "sentencepiece==0.2.1",
+
+    # Required for Chroma
+    "scipy==1.16.3",
 ]
 
 [project.optional-dependencies]

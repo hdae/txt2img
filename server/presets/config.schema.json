@@ -20,6 +20,16 @@
         }
     ],
     "$defs": {
+        "vram_profile": {
+            "type": "string",
+            "enum": [
+                "full",
+                "balanced",
+                "lowvram"
+            ],
+            "default": "balanced",
+            "description": "VRAM optimization profile: full (24GB+), balanced (12-16GB), lowvram (8GB)"
+        },
         "sdxl": {
             "type": "object",
             "required": [
@@ -86,6 +96,9 @@
                     },
                     "default": []
                 },
+                "vram_profile": {
+                    "$ref": "#/$defs/vram_profile"
+                },
                 "training_resolution": {
                     "type": "integer",
                     "default": 1024,
@@ -151,6 +164,9 @@
                     "type": "string",
                     "description": "HuggingFace repo (e.g., black-forest-labs/FLUX.1-dev)"
                 },
+                "vram_profile": {
+                    "$ref": "#/$defs/vram_profile"
+                },
                 "default_steps": {
                     "type": "integer",
                     "default": 50,
@@ -196,6 +212,9 @@
                     "type": "string",
                     "description": "HuggingFace repo (e.g., black-forest-labs/FLUX.1-schnell)"
                 },
+                "vram_profile": {
+                    "$ref": "#/$defs/vram_profile"
+                },
                 "default_steps": {
                     "type": "integer",
                     "default": 4,
@@ -233,6 +252,9 @@
                 "model": {
                     "type": "string",
                     "description": "HuggingFace repo: lodestones/Chroma1-Flash (4 steps), Chroma1-Base (20 steps), or Chroma1-HD (28 steps)"
+                },
+                "vram_profile": {
+                    "$ref": "#/$defs/vram_profile"
                 },
                 "default_steps": {
                     "type": "integer",
@@ -278,6 +300,9 @@
                 "model": {
                     "type": "string",
                     "description": "HuggingFace repo (e.g., Tongyi-MAI/Z-Image-Turbo)"
+                },
+                "vram_profile": {
+                    "$ref": "#/$defs/vram_profile"
                 },
                 "default_steps": {
                     "type": "integer",

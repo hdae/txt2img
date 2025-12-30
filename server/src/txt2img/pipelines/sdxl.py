@@ -17,7 +17,7 @@ from PIL import Image
 
 from txt2img.config import (
     ModelType,
-    QuantizationType,
+    VramProfile,
     get_model_config,
     get_settings,
 )
@@ -52,7 +52,6 @@ class SDXLPipeline(BasePipeline):
         self._model_name: str = ""
         self.loaded_loras: list[str] = []  # All LoRAs loaded in memory
         self.last_used_loras: set[str] = set()  # LoRAs used in last generation
-        self._quantized = False
 
     @property
     def model_name(self) -> str:
@@ -75,9 +74,6 @@ class SDXLPipeline(BasePipeline):
         else:
             raise ValueError(f"Unsupported model type: {config.type}")
 
-        # Move to GPU
-        self.pipe = self.pipe.to("cuda")
-
         # Load VAE if specified
         await self._load_vae(config.vae)
 
@@ -89,22 +85,11 @@ class SDXLPipeline(BasePipeline):
             self.pipe.vae.config.force_upcast = False
             logger.info("VAE force_upcast disabled")
 
-        if config.vae_tiling:
-            self.pipe.vae.enable_tiling()
-            logger.info("VAE tiling enabled")
+        # Apply VRAM profile optimizations
+        self._apply_vram_profile(config.vram_profile)
 
         # LoRAs are loaded on-demand during generation (not at startup)
         # This saves VRAM when LoRAs are not immediately needed
-
-        # Apply quantization (skip if LoRAs might be used later)
-        # WARNING: TorchAO quantization + PEFT LoRA causes black images
-        if config.loras and config.quantization != QuantizationType.NONE:
-            logger.warning(
-                "Quantization disabled: LoRA is configured and quantization causes black images. "
-                "See README for details."
-            )
-        elif config.quantization != QuantizationType.NONE:
-            await self._apply_quantization(config.quantization)
 
         logger.info(f"Model loaded: {self.model_name}")
 
@@ -183,35 +168,39 @@ class SDXLPipeline(BasePipeline):
         else:
             raise ValueError(f"Unsupported VAE reference type: {type(vae_model_ref)}")
 
-        self.pipe.vae = vae.to("cuda")
+        self.pipe.vae = vae
         logger.info("VAE loaded and replaced")
 
-    async def _apply_quantization(self, quantization: QuantizationType) -> None:
-        """Apply TorchAO quantization to UNet only (not VAE)."""
-        if not self.pipe or quantization == QuantizationType.NONE or self._quantized:
+    def _apply_vram_profile(self, profile: VramProfile) -> None:
+        """Apply VRAM optimization based on profile.
+
+        - FULL: No offloading, maximum speed (24GB+ VRAM for Flux, 12GB+ for SDXL)
+        - BALANCED: Model-level CPU offload + VAE tiling (12-16GB for Flux, 8GB for SDXL)
+        - LOWVRAM: Group offload with streaming + VAE tiling (8GB for Flux, 6GB for SDXL)
+        """
+        if not self.pipe:
             return
 
-        logger.info(f"Applying TorchAO quantization: {quantization.value}")
+        logger.info(f"Applying VRAM profile: {profile.value}")
 
-        try:
-            from torchao.quantization import quantize_
+        if profile == VramProfile.FULL:
+            # No offloading - move everything to GPU
+            self.pipe = self.pipe.to("cuda")
+            logger.info("VRAM profile: FULL - no offloading")
 
-            if quantization == QuantizationType.INT8_WEIGHT_ONLY:
-                # Use version=2 to avoid deprecation warning
-                # Only quantize UNet, not VAE (VAE quantization causes black images)
-                from torchao.quantization import Int8WeightOnlyConfig
+        elif profile == VramProfile.BALANCED:
+            # Model-level CPU offload + VAE tiling
+            self.pipe.enable_model_cpu_offload()
+            self.pipe.vae.enable_tiling()
+            logger.info("VRAM profile: BALANCED - model offload + VAE tiling")
 
-                quantize_(self.pipe.unet, Int8WeightOnlyConfig(version=2))
-                logger.info("Applied int8 weight-only quantization to UNet")
-            elif quantization == QuantizationType.FP8_WEIGHT_ONLY:
-                from torchao.quantization import Float8WeightOnlyConfig
-
-                quantize_(self.pipe.unet, Float8WeightOnlyConfig())
-                logger.info("Applied fp8 weight-only quantization to UNet")
-
-            self._quantized = True
-        except Exception as e:
-            logger.warning(f"TorchAO quantization failed: {e}, continuing without quantization")
+        elif profile == VramProfile.LOWVRAM:
+            # Model CPU offload + VAE tiling + slicing (for SDXL, most memory efficient stable option)
+            # Note: sequential_cpu_offload has compatibility issues with from_single_file loading
+            self.pipe.enable_model_cpu_offload()
+            self.pipe.vae.enable_tiling()
+            self.pipe.vae.enable_slicing()
+            logger.info("VRAM profile: LOWVRAM - model offload + VAE tiling/slicing")
 
     async def load_loras(self, lora_configs: list) -> None:
         """Load LoRA weights.
@@ -457,101 +446,74 @@ class SDXLPipeline(BasePipeline):
                       pooled_prompt_embeds, negative_pooled_prompt_embeds)
         """
         import re
-        import warnings
+
+        from compel import CompelForSDXL
 
         from txt2img.core.prompt_parser import convert_a1111_to_compel
 
-        # Suppress Compel deprecation warnings
-        warnings.filterwarnings("ignore", message=".*passing multiple tokenizers.*")
-        warnings.filterwarnings("ignore", message=".*Token indices sequence length.*")
+        # Ensure text encoders are on GPU for Compel (fixes cpu_offload compatibility)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if hasattr(self.pipe, "text_encoder") and self.pipe.text_encoder is not None:
+            self.pipe.text_encoder = self.pipe.text_encoder.to(device)
+        if hasattr(self.pipe, "text_encoder_2") and self.pipe.text_encoder_2 is not None:
+            self.pipe.text_encoder_2 = self.pipe.text_encoder_2.to(device)
 
-        from compel import Compel, ReturnedEmbeddingsType
+        # Use CompelForSDXL (new non-deprecated API)
+        compel = CompelForSDXL(self.pipe)
 
-        compel = Compel(
-            tokenizer=[self.pipe.tokenizer, self.pipe.tokenizer_2],
-            text_encoder=[self.pipe.text_encoder, self.pipe.text_encoder_2],
-            returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED,
-            requires_pooled=[False, True],
-            truncate_long_prompts=False,
-        )
+        # Prepend trigger words to prompt if any
+        full_prompt = prompt
+        if trigger_info:
+            trigger_parts = []
+            for trigger_words, weight in trigger_info:
+                if weight > 0:
+                    # Apply weight to trigger words
+                    compel_trigger = convert_a1111_to_compel(trigger_words)
+                    if weight != 1.0:
+                        trigger_parts.append(f"({compel_trigger}){weight}")
+                    else:
+                        trigger_parts.append(compel_trigger)
+            if trigger_parts:
+                triggers_str = ", ".join(trigger_parts)
+                full_prompt = f"{triggers_str}, {prompt}"
+                logger.info(f"Prepended triggers to prompt: {triggers_str}")
 
-        # Split prompt by BREAK keyword
-        segments = re.split(r"\bBREAK\b", prompt, flags=re.IGNORECASE)
-        segments = [s.strip() for s in segments if s.strip()]
+        # Split prompt by BREAK keyword and convert to Compel syntax
+        segments = re.split(r"\bBREAK\b", full_prompt, flags=re.IGNORECASE)
+        segments = [convert_a1111_to_compel(s.strip()) for s in segments if s.strip()]
 
         if not segments:
             segments = [""]
 
-        # Convert each segment from LPW to Compel syntax and compute embeddings
-        segment_embeds = []
-        pooled = None
+        # Join segments with .and() for concatenation
+        if len(segments) > 1:
+            compel_prompt = ").and(\"".join(segments)
+            compel_prompt = f'("{compel_prompt}")'
+            logger.info(f"Concatenated {len(segments)} BREAK segments")
+        else:
+            compel_prompt = segments[0]
 
+        # Process negative prompt
+        neg_prompt = negative_prompt or ""
+        neg_segments = re.split(r"\bBREAK\b", neg_prompt, flags=re.IGNORECASE)
+        neg_segments = [convert_a1111_to_compel(s.strip()) for s in neg_segments if s.strip()]
+
+        if len(neg_segments) > 1:
+            compel_neg_prompt = ").and(\"".join(neg_segments)
+            compel_neg_prompt = f'("{compel_neg_prompt}")'
+        else:
+            compel_neg_prompt = neg_segments[0] if neg_segments else ""
+
+        # Generate conditioning using CompelForSDXL
         with torch.inference_mode():
-            for segment in segments:
-                # Convert LPW syntax to Compel syntax
-                compel_segment = convert_a1111_to_compel(segment)
-                emb, pool = compel(compel_segment)
-                segment_embeds.append(emb)
-                if pooled is None:
-                    pooled = pool
+            conditioning = compel(compel_prompt, negative_prompt=compel_neg_prompt)
 
-        # Concatenate all segment embeddings
-        if len(segment_embeds) > 1:
-            prompt_embeds = torch.cat(segment_embeds, dim=1)
-            logger.info(
-                f"Concatenated {len(segment_embeds)} BREAK segments, total tokens: {prompt_embeds.shape[1]}"
-            )
-        else:
-            prompt_embeds = segment_embeds[0]
+        prompt_embeds = conditioning.embeds
+        pooled_prompt_embeds = conditioning.pooled_embeds
+        negative_prompt_embeds = conditioning.negative_embeds
+        negative_pooled_prompt_embeds = conditioning.negative_pooled_embeds
 
-        pooled_prompt_embeds = pooled
-
-        # Prepend trigger embeddings if any
-        if trigger_info:
-            trigger_parts = []
-            with torch.inference_mode():
-                for trigger_words, weight in trigger_info:
-                    if weight > 0:
-                        # Convert trigger words too (in case they have weights)
-                        compel_trigger = convert_a1111_to_compel(trigger_words)
-                        trigger_emb, _ = compel(compel_trigger)
-                        trigger_parts.append(trigger_emb * weight)
-
-            if trigger_parts:
-                if len(trigger_parts) > 1:
-                    total_trigger = torch.stack(trigger_parts).mean(dim=0)
-                else:
-                    total_trigger = trigger_parts[0]
-
-                prompt_embeds = torch.cat([total_trigger, prompt_embeds], dim=1)
-                logger.info(
-                    f"Prepended trigger embeddings: {len(trigger_info)} triggers, "
-                    f"total tokens: {prompt_embeds.shape[1]}"
-                )
-
-        # Process negative prompt (with BREAK support)
-        neg_segments = re.split(r"\bBREAK\b", negative_prompt or "", flags=re.IGNORECASE)
-        neg_segments = [s.strip() for s in neg_segments if s.strip()]
-
-        if neg_segments:
-            neg_embeds = []
-            neg_pooled = None
-            with torch.inference_mode():
-                for seg in neg_segments:
-                    compel_seg = convert_a1111_to_compel(seg)
-                    emb, pool = compel(compel_seg)
-                    neg_embeds.append(emb)
-                    if neg_pooled is None:
-                        neg_pooled = pool
-            negative_prompt_embeds = (
-                torch.cat(neg_embeds, dim=1) if len(neg_embeds) > 1 else neg_embeds[0]
-            )
-            negative_pooled_prompt_embeds = neg_pooled
-        else:
-            with torch.inference_mode():
-                negative_prompt_embeds, negative_pooled_prompt_embeds = compel("")
-
-        # Pad negative to match prompt length
+        # Pad negative to match prompt length if needed
         if negative_prompt_embeds.shape[1] != prompt_embeds.shape[1]:
             if negative_prompt_embeds.shape[1] < prompt_embeds.shape[1]:
                 padding = torch.zeros(
