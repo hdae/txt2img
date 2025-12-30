@@ -8,9 +8,9 @@ from pathlib import Path
 from safetensors import safe_open
 
 from txt2img.config import get_model_config, get_settings
-from txt2img.models.air_parser import AIRResource, parse_model_ref
-from txt2img.models.civitai import download_model as civitai_download
-from txt2img.models.civitai import get_model_version_info
+from txt2img.providers.civitai import download_model as civitai_download
+from txt2img.providers.civitai import get_model_version_info
+from txt2img.utils.air_parser import AIRResource, parse_model_ref
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +130,8 @@ class LoraManager:
 
     async def _download_lora(self, model_ref) -> Path | None:
         """Download LoRA file."""
-        from txt2img.models.air_parser import AIRResource, HuggingFaceResource, URLResource
-        from txt2img.models.huggingface import download_hf_lora
+        from txt2img.providers.huggingface import download_hf_lora
+        from txt2img.utils.air_parser import AIRResource, HuggingFaceResource, URLResource
 
         if isinstance(model_ref, AIRResource):
             return await civitai_download(model_ref)

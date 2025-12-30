@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 
 from txt2img.config import get_settings
-from txt2img.models.air_parser import HuggingFaceResource, URLResource
+from txt2img.utils.air_parser import HuggingFaceResource, URLResource
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from txt2img.api.router import router
 from txt2img.config import get_settings
 from txt2img.core.job_queue import job_queue
-from txt2img.core.pipeline import pipeline
+from txt2img.pipelines import get_pipeline
 
 # ANSI color codes for terminal
 RED = "\033[91m"
@@ -35,10 +35,10 @@ class EmojiFormatter(logging.Formatter):
 
     # Module-specific emojis (overrides level emoji for INFO)
     MODULE_EMOJI = {
-        "txt2img.models.civitai": "📥",  # Download
-        "txt2img.models.huggingface": "📥",  # Download
+        "txt2img.providers.civitai": "📥",  # Download
+        "txt2img.providers.huggingface": "📥",  # Download
         "txt2img.core.lora_manager": "🎨",  # LoRA
-        "txt2img.core.pipeline": "🖼️ ",  # Generation
+        "txt2img.pipelines.sdxl": "🖼️ ",  # Generation
         "txt2img.core.job_queue": "📋",  # Jobs
         "txt2img.core.image_processor": "💾",  # Save
         "txt2img.api.router": "🌐",  # API
@@ -87,7 +87,7 @@ async def job_worker():
                     await job_queue.update_job_progress(bound_job_id, step, preview)
 
                 # Generate image
-                saved = await pipeline.generate(
+                saved = await get_pipeline().generate(
                     job.params,
                     progress_callback=lambda s, p: asyncio.create_task(progress_callback(s, p)),
                 )
@@ -134,7 +134,7 @@ async def lifespan(app: FastAPI):
 
     # Load model
     logger.info("Loading model...")
-    await pipeline.load_model()
+    await get_pipeline().load_model()
     logger.info("Model loaded successfully")
 
     # Initialize LoRA manager

@@ -20,7 +20,7 @@ from txt2img.config import get_settings
 from txt2img.core.image_processor import list_images
 from txt2img.core.job_queue import GenerationParams, job_queue
 from txt2img.core.lora_manager import lora_manager
-from txt2img.core.pipeline import pipeline
+from txt2img.pipelines import get_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,7 @@ async def get_server_info() -> ServerInfo:
     ]
 
     return ServerInfo(
-        model_name=pipeline.model_name or "Not loaded",
+        model_name=get_pipeline().model_name or "Not loaded",
         training_resolution=str(config.training_resolution),
         available_loras=available_loras,
     )

@@ -21,17 +21,18 @@ from txt2img.config import (
     get_model_config,
     get_settings,
 )
+from txt2img.core.base_pipeline import BasePipeline
 from txt2img.core.image_processor import ImageMetadata, SavedImage, save_image
 from txt2img.core.job_queue import GenerationParams
-from txt2img.models.air_parser import (
+from txt2img.providers.civitai import download_model as civitai_download
+from txt2img.providers.huggingface import download_from_url, get_hf_model_path
+from txt2img.utils.air_parser import (
     AIRResource,
     HuggingFaceResource,
     ModelSource,
     URLResource,
     parse_model_ref,
 )
-from txt2img.models.civitai import download_model as civitai_download
-from txt2img.models.huggingface import download_from_url, get_hf_model_path
 
 logger = logging.getLogger(__name__)
 
@@ -43,15 +44,20 @@ SCHEDULERS = {
 }
 
 
-class SDXLPipeline:
+class SDXLPipeline(BasePipeline):
     """SDXL Pipeline manager with model configuration support."""
 
     def __init__(self) -> None:
         self.pipe: StableDiffusionXLPipeline | None = None
-        self.model_name: str = ""
+        self._model_name: str = ""
         self.loaded_loras: list[str] = []  # All LoRAs loaded in memory
         self.last_used_loras: set[str] = set()  # LoRAs used in last generation
         self._quantized = False
+
+    @property
+    def model_name(self) -> str:
+        """Get the loaded model name."""
+        return self._model_name
 
     async def load_model(self) -> None:
         """Load model from ModelConfig."""
@@ -110,7 +116,7 @@ class SDXLPipeline:
         if isinstance(model_ref, AIRResource):
             if model_ref.source == ModelSource.CIVITAI:
                 model_path = await civitai_download(model_ref)
-                self.model_name = model_path.stem
+                self._model_name = model_path.stem
                 self.pipe = StableDiffusionXLPipeline.from_single_file(
                     str(model_path),
                     torch_dtype=torch.float16,
@@ -120,7 +126,7 @@ class SDXLPipeline:
                 raise ValueError(f"Unsupported AIR source: {model_ref.source}")
         elif isinstance(model_ref, HuggingFaceResource):
             model_path = get_hf_model_path(model_ref)
-            self.model_name = model_ref.repo_id.split("/")[-1]
+            self._model_name = model_ref.repo_id.split("/")[-1]
             self.pipe = StableDiffusionXLPipeline.from_pretrained(
                 model_path,
                 torch_dtype=torch.float16,
@@ -129,7 +135,7 @@ class SDXLPipeline:
             )
         elif isinstance(model_ref, URLResource):
             downloaded_path = await download_from_url(model_ref)
-            self.model_name = downloaded_path.stem
+            self._model_name = downloaded_path.stem
             self.pipe = StableDiffusionXLPipeline.from_single_file(
                 str(downloaded_path),
                 torch_dtype=torch.float16,
@@ -566,7 +572,3 @@ class SDXLPipeline:
             pooled_prompt_embeds,
             negative_pooled_prompt_embeds,
         )
-
-
-# Global pipeline instance
-pipeline = SDXLPipeline()
