@@ -1,5 +1,5 @@
 {
-    "$schema": "./config.schema.json",
+    "$schema": "../config.schema.json",
     "type": "sdxl",
     "model": "urn:air:sdxl:checkpoint:civitai:823763@1892440",
     "vae": null,
@@ -25,8 +25,6 @@
             "trigger_weight": 1
         }
     ],
-    "quantization": "none",
-    "vae_tiling": true,
     "training_resolution": 1536,
     "default_steps": 20,
     "default_cfg": 7.0,

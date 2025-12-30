@@ -1,105 +1,301 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "txt2img Model Configuration",
-    "description": "Configuration for txt2img model presets",
-    "type": "object",
-    "required": [
-        "type",
-        "model"
+    "description": "Configuration for txt2img model presets. Each model type has its own specific properties.",
+    "oneOf": [
+        {
+            "$ref": "#/$defs/sdxl"
+        },
+        {
+            "$ref": "#/$defs/flux"
+        },
+        {
+            "$ref": "#/$defs/flux_schnell"
+        },
+        {
+            "$ref": "#/$defs/chroma"
+        },
+        {
+            "$ref": "#/$defs/zimage"
+        }
     ],
-    "properties": {
-        "type": {
-            "type": "string",
-            "enum": [
-                "sdxl",
-                "sd3",
-                "flux",
-                "flux_schnell",
-                "chroma",
-                "zimage"
+    "$defs": {
+        "sdxl": {
+            "type": "object",
+            "required": [
+                "type",
+                "model"
             ],
-            "description": "Model architecture type"
-        },
-        "model": {
-            "type": "string",
-            "description": "Model reference: Civitai AIR URN, HuggingFace repo, or URL",
-            "examples": [
-                "urn:air:sdxl:checkpoint:civitai:827184@1469915",
-                "black-forest-labs/FLUX.1-schnell",
-                "lodestones/Chroma1-Flash"
-            ]
-        },
-        "vae": {
-            "type": [
-                "string",
-                "null"
-            ],
-            "default": null,
-            "description": "Custom VAE (SDXL only). Null uses model's embedded VAE"
-        },
-        "loras": {
-            "type": "array",
-            "items": {
-                "oneOf": [
-                    {
-                        "type": "string"
-                    },
-                    {
+            "additionalProperties": false,
+            "properties": {
+                "$schema": {
+                    "type": "string",
+                    "description": "JSON Schema reference"
+                },
+                "type": {
+                    "const": "sdxl",
+                    "description": "SDXL model type (Stable Diffusion XL and derivatives)"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model reference: Civitai AIR URN (urn:air:sdxl:checkpoint:civitai:...), HuggingFace repo, or direct URL"
+                },
+                "vae": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "Custom VAE reference. Null uses the model's embedded VAE"
+                },
+                "loras": {
+                    "type": "array",
+                    "description": "List of LoRA configurations to apply",
+                    "items": {
                         "type": "object",
+                        "required": [
+                            "ref"
+                        ],
                         "properties": {
                             "ref": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "LoRA reference (Civitai AIR URN or URL)"
                             },
                             "triggers": {
                                 "type": "array",
                                 "items": {
                                     "type": "string"
-                                }
+                                },
+                                "description": "Trigger words for this LoRA"
                             },
                             "weight": {
                                 "type": "number",
-                                "default": 1.0
+                                "default": 1.0,
+                                "minimum": 0.0,
+                                "maximum": 2.0,
+                                "description": "LoRA strength"
+                            },
+                            "trigger_weight": {
+                                "type": "number",
+                                "default": 0.5,
+                                "minimum": 0.0,
+                                "maximum": 2.0,
+                                "description": "Trigger word emphasis weight"
                             }
-                        },
-                        "required": [
-                            "ref"
-                        ]
-                    }
-                ]
-            },
-            "default": [],
-            "description": "LoRA configurations (SDXL only)"
+                        }
+                    },
+                    "default": []
+                },
+                "training_resolution": {
+                    "type": "integer",
+                    "default": 1024,
+                    "description": "Model's training resolution for aspect ratio bucketing"
+                },
+                "default_steps": {
+                    "type": "integer",
+                    "default": 30,
+                    "minimum": 1,
+                    "maximum": 150,
+                    "description": "Default number of inference steps"
+                },
+                "default_cfg": {
+                    "type": "number",
+                    "default": 5.0,
+                    "minimum": 1.0,
+                    "maximum": 30.0,
+                    "description": "Default CFG (Classifier-Free Guidance) scale"
+                },
+                "default_sampler": {
+                    "type": "string",
+                    "default": "euler_a",
+                    "enum": [
+                        "euler",
+                        "euler_a",
+                        "dpm++_2m",
+                        "dpm++_2m_sde",
+                        "dpm++_sde",
+                        "ddim",
+                        "heun",
+                        "lms"
+                    ],
+                    "description": "Default sampler algorithm"
+                },
+                "output_format": {
+                    "type": "string",
+                    "enum": [
+                        "png",
+                        "webp"
+                    ],
+                    "default": "webp",
+                    "description": "Output image format"
+                }
+            }
         },
-        "training_resolution": {
-            "type": "integer",
-            "default": 1024,
-            "description": "Model's training resolution (SDXL only)"
-        },
-        "default_steps": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 150,
-            "description": "Default inference steps. Optimal values vary by model type"
-        },
-        "default_cfg": {
-            "type": "number",
-            "minimum": 0.0,
-            "maximum": 30.0,
-            "description": "Default CFG scale. Some models (schnell, zimage) ignore this"
-        },
-        "default_sampler": {
-            "type": "string",
-            "default": "euler",
-            "description": "Default sampler (SDXL only)"
-        },
-        "output_format": {
-            "type": "string",
-            "enum": [
-                "png",
-                "webp"
+        "flux": {
+            "type": "object",
+            "required": [
+                "type",
+                "model"
             ],
-            "default": "webp",
-            "description": "Output image format"
+            "additionalProperties": false,
+            "properties": {
+                "$schema": {
+                    "type": "string",
+                    "description": "JSON Schema reference"
+                },
+                "type": {
+                    "const": "flux",
+                    "description": "FLUX.1 [dev] model type (guidance-distilled, ~50 steps)"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "HuggingFace repo (e.g., black-forest-labs/FLUX.1-dev)"
+                },
+                "default_steps": {
+                    "type": "integer",
+                    "default": 50,
+                    "minimum": 1,
+                    "maximum": 150,
+                    "description": "Default inference steps (recommended: 50)"
+                },
+                "default_cfg": {
+                    "type": "number",
+                    "default": 3.5,
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                    "description": "Guidance scale (recommended: 3.5)"
+                },
+                "output_format": {
+                    "type": "string",
+                    "enum": [
+                        "png",
+                        "webp"
+                    ],
+                    "default": "webp",
+                    "description": "Output image format"
+                }
+            }
+        },
+        "flux_schnell": {
+            "type": "object",
+            "required": [
+                "type",
+                "model"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "$schema": {
+                    "type": "string",
+                    "description": "JSON Schema reference"
+                },
+                "type": {
+                    "const": "flux_schnell",
+                    "description": "FLUX.1 [schnell] model type (timestep-distilled, 4 steps)"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "HuggingFace repo (e.g., black-forest-labs/FLUX.1-schnell)"
+                },
+                "default_steps": {
+                    "type": "integer",
+                    "default": 4,
+                    "minimum": 1,
+                    "maximum": 10,
+                    "description": "Default inference steps (optimal: 4, max: 10)"
+                },
+                "output_format": {
+                    "type": "string",
+                    "enum": [
+                        "png",
+                        "webp"
+                    ],
+                    "default": "webp",
+                    "description": "Output image format"
+                }
+            }
+        },
+        "chroma": {
+            "type": "object",
+            "required": [
+                "type",
+                "model"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "$schema": {
+                    "type": "string",
+                    "description": "JSON Schema reference"
+                },
+                "type": {
+                    "const": "chroma",
+                    "description": "Chroma model type (8.9B Flux variant with single T5 encoder)"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "HuggingFace repo: lodestones/Chroma1-Flash (4 steps), Chroma1-Base (20 steps), or Chroma1-HD (28 steps)"
+                },
+                "default_steps": {
+                    "type": "integer",
+                    "default": 4,
+                    "minimum": 1,
+                    "maximum": 50,
+                    "description": "Default inference steps (Flash: 4, Base: 20, HD: 28)"
+                },
+                "default_cfg": {
+                    "type": "number",
+                    "default": 4.0,
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                    "description": "Guidance scale (recommended: 4.0)"
+                },
+                "output_format": {
+                    "type": "string",
+                    "enum": [
+                        "png",
+                        "webp"
+                    ],
+                    "default": "webp",
+                    "description": "Output image format"
+                }
+            }
+        },
+        "zimage": {
+            "type": "object",
+            "required": [
+                "type",
+                "model"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "$schema": {
+                    "type": "string",
+                    "description": "JSON Schema reference"
+                },
+                "type": {
+                    "const": "zimage",
+                    "description": "Z-Image Turbo model type (6B fast text-to-image, 8 steps)"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "HuggingFace repo (e.g., Tongyi-MAI/Z-Image-Turbo)"
+                },
+                "default_steps": {
+                    "type": "integer",
+                    "default": 8,
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Default inference steps (optimal: 8)"
+                },
+                "output_format": {
+                    "type": "string",
+                    "enum": [
+                        "png",
+                        "webp"
+                    ],
+                    "default": "webp",
+                    "description": "Output image format"
+                }
+            }
         }
     }
 }
