@@ -7,7 +7,5 @@
     "training_resolution": 1024,
     "default_steps": 30,
     "default_cfg": 5.0,
-    "default_sampler": "euler_a",
-    "output_format": "webp",
-    "vram_profile": "balanced"
+    "default_sampler": "euler_a"
 }

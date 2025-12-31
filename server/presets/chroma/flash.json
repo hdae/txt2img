@@ -3,7 +3,5 @@
     "type": "chroma",
     "model": "lodestones/Chroma1-Flash",
     "default_steps": 4,
-    "default_cfg": 4.0,
-    "output_format": "webp",
-    "vram_profile": "lowvram"
+    "default_cfg": 4.0
 }

@@ -78,7 +78,10 @@ Presets are JSON files in `server/presets/`. See
 
 ### VRAM Profiles
 
-Optimize VRAM usage with the `vram_profile` setting:
+> **Note**: This setting is device-specific and configured via environment
+> variable only (not in presets).
+
+Set via `VRAM_PROFILE` environment variable (default: `full`):
 
 | Profile    | VRAM Target | Optimization                           |
 | ---------- | ----------- | -------------------------------------- |
@@ -86,12 +89,25 @@ Optimize VRAM usage with the `vram_profile` setting:
 | `balanced` | 12-16GB     | Model CPU offload + VAE tiling         |
 | `lowvram`  | 8GB         | Group offload (streaming) + VAE tiling |
 
-Default is `balanced`. Set in preset:
+```bash
+# In .env
+VRAM_PROFILE=balanced
+```
 
-```json
-{
-    "vram_profile": "lowvram"
-}
+### Output Format
+
+> **Note**: Configured via environment variable only (not in presets).
+
+Set via `OUTPUT_FORMAT` environment variable (default: `png`):
+
+| Format | Description                 |
+| ------ | --------------------------- |
+| `png`  | Lossless, larger files      |
+| `webp` | Lossy (quality=95), smaller |
+
+```bash
+# In .env
+OUTPUT_FORMAT=webp
 ```
 
 ## LoRA Configuration

@@ -5,9 +5,6 @@
     "vae": null,
     "loras": [
         {
-            "ref": "urn:air:sdxl:lora:civitai:1377820@1963644"
-        },
-        {
             "ref": "https://huggingface.co/datasets/beamman/hakidame_lora/resolve/main/hk_szk001-000020.safetensors",
             "triggers": [
                 "hk_szk",
@@ -28,7 +25,5 @@
     "training_resolution": 1536,
     "default_steps": 20,
     "default_cfg": 7.0,
-    "default_sampler": "euler_a",
-    "output_format": "webp",
-    "vram_profile": "balanced"
+    "default_sampler": "euler_a"
 }

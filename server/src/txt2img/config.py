@@ -82,17 +82,11 @@ class ModelConfig:
     # LoRAs (string or object with ref + triggers)
     loras: list[LoraConfig] = field(default_factory=list)
 
-    # VRAM optimization
-    vram_profile: VramProfile = VramProfile.BALANCED
-
     # Generation defaults
     training_resolution: int = 1024
     default_steps: int = 20
     default_cfg: float = 7.0
     default_sampler: str = "euler"
-
-    # Output
-    output_format: OutputFormat = OutputFormat.WEBP
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ModelConfig":
@@ -100,10 +94,6 @@ class ModelConfig:
         # Handle enum conversions
         if "type" in data and isinstance(data["type"], str):
             data["type"] = ModelType(data["type"])
-        if "vram_profile" in data and isinstance(data["vram_profile"], str):
-            data["vram_profile"] = VramProfile(data["vram_profile"])
-        if "output_format" in data and isinstance(data["output_format"], str):
-            data["output_format"] = OutputFormat(data["output_format"])
 
         # Handle loras conversion (string or dict -> LoraConfig)
         if "loras" in data:
@@ -122,12 +112,10 @@ class ModelConfig:
             "model": self.model,
             "vae": self.vae,
             "loras": self.loras,
-            "vram_profile": self.vram_profile.value,
             "training_resolution": self.training_resolution,
             "default_steps": self.default_steps,
             "default_cfg": self.default_cfg,
             "default_sampler": self.default_sampler,
-            "output_format": self.output_format.value,
         }
 
 
@@ -159,6 +147,16 @@ class Settings(BaseSettings):
     )
     presets_dir: Path = Field(
         default=Path("/workspace/app/presets"), description="Presets directory"
+    )
+
+    # VRAM optimization (overrides preset value)
+    vram_profile: str | None = Field(
+        default=None, description="VRAM profile: full, balanced, or lowvram"
+    )
+
+    # Output format (overrides preset value)
+    output_format: str | None = Field(
+        default=None, description="Output format: png or webp"
     )
 
     # Server settings
@@ -263,3 +261,33 @@ def get_model_config() -> ModelConfig:
     if _model_config is None:
         raise RuntimeError("Model config not loaded. Call load_model_config() first.")
     return _model_config
+
+
+def get_vram_profile() -> VramProfile:
+    """Get VRAM profile from environment variable.
+
+    Returns:
+        VramProfile enum value (defaults to FULL)
+    """
+    settings = get_settings()
+    profile_str = settings.vram_profile or "full"
+    try:
+        return VramProfile(profile_str)
+    except ValueError:
+        logger.warning(f"Invalid VRAM_PROFILE '{profile_str}', using 'full'")
+        return VramProfile.FULL
+
+
+def get_output_format() -> OutputFormat:
+    """Get output format from environment variable.
+
+    Returns:
+        OutputFormat enum value (defaults to PNG)
+    """
+    settings = get_settings()
+    format_str = settings.output_format or "png"
+    try:
+        return OutputFormat(format_str)
+    except ValueError:
+        logger.warning(f"Invalid OUTPUT_FORMAT '{format_str}', using 'png'")
+        return OutputFormat.PNG

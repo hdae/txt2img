@@ -18,6 +18,10 @@ services:
       # API keys
       - CIVITAI_API_KEY=${CIVITAI_API_KEY:-}
       - HF_TOKEN=${HF_TOKEN:-}
+      # VRAM optimization (full, balanced, lowvram)
+      - VRAM_PROFILE=${VRAM_PROFILE:-full}
+      # Output format (png, webp)
+      - OUTPUT_FORMAT=${OUTPUT_FORMAT:-png}
       # Directories
       - MODEL_CACHE_DIR=/workspace/models
       - OUTPUT_DIR=/workspace/outputs

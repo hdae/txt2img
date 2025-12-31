@@ -1,12 +1,9 @@
 {
     "$schema": "../config.schema.json",
     "type": "sdxl",
-    "model": "urn:air:sdxl:checkpoint:civitai:823763@1892440",
+    "model": "urn:air:sdxl:checkpoint:civitai:827184@2514310",
     "vae": null,
     "loras": [
-        {
-            "ref": "urn:air:sdxl:lora:civitai:1377820@1963644"
-        },
         {
             "ref": "https://huggingface.co/datasets/beamman/hakidame_lora/resolve/main/hk_szk001-000020.safetensors",
             "triggers": [
@@ -25,10 +22,8 @@
             "trigger_weight": 1
         }
     ],
-    "training_resolution": 1536,
+    "training_resolution": 1024,
     "default_steps": 20,
     "default_cfg": 7.0,
-    "default_sampler": "euler_a",
-    "output_format": "webp",
-    "vram_profile": "full"
+    "default_sampler": "euler_a"
 }

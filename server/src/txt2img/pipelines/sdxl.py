@@ -86,7 +86,9 @@ class SDXLPipeline(BasePipeline):
             logger.info("VAE force_upcast disabled")
 
         # Apply VRAM profile optimizations
-        self._apply_vram_profile(config.vram_profile)
+        from txt2img.config import get_vram_profile
+
+        self._apply_vram_profile(get_vram_profile())
 
         # LoRAs are loaded on-demand during generation (not at startup)
         # This saves VRAM when LoRAs are not immediately needed

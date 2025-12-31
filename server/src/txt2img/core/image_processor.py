@@ -106,10 +106,10 @@ def save_image(
     Returns:
         SavedImage with paths and info
     """
-    from txt2img.config import get_model_config
+    from txt2img.config import get_output_format
 
     settings = get_settings()
-    config = get_model_config()
+    output_format = get_output_format()
 
     if image_id is None:
         image_id = generate_image_id()
@@ -125,7 +125,7 @@ def save_image(
     pnginfo_str = metadata.to_pnginfo_string()
 
     # Save full size image
-    if config.output_format == OutputFormat.PNG:
+    if output_format == OutputFormat.PNG:
         full_path = output_dir / f"{image_id}.png"
         pnginfo = PngInfo()
         pnginfo.add_text("parameters", pnginfo_str)
@@ -158,7 +158,7 @@ def save_image(
         id=image_id,
         full_path=full_path,
         thumbnail_path=thumb_path,
-        format=config.output_format,
+        format=output_format,
         metadata=metadata,
     )
 

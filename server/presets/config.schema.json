@@ -20,16 +20,6 @@
         }
     ],
     "$defs": {
-        "vram_profile": {
-            "type": "string",
-            "enum": [
-                "full",
-                "balanced",
-                "lowvram"
-            ],
-            "default": "balanced",
-            "description": "VRAM optimization profile: full (24GB+), balanced (12-16GB), lowvram (8GB)"
-        },
         "sdxl": {
             "type": "object",
             "required": [
@@ -96,9 +86,6 @@
                     },
                     "default": []
                 },
-                "vram_profile": {
-                    "$ref": "#/$defs/vram_profile"
-                },
                 "training_resolution": {
                     "type": "integer",
                     "default": 1024,
@@ -132,15 +119,6 @@
                         "lms"
                     ],
                     "description": "Default sampler algorithm"
-                },
-                "output_format": {
-                    "type": "string",
-                    "enum": [
-                        "png",
-                        "webp"
-                    ],
-                    "default": "webp",
-                    "description": "Output image format"
                 }
             }
         },
@@ -164,9 +142,6 @@
                     "type": "string",
                     "description": "HuggingFace repo (e.g., black-forest-labs/FLUX.1-dev)"
                 },
-                "vram_profile": {
-                    "$ref": "#/$defs/vram_profile"
-                },
                 "default_steps": {
                     "type": "integer",
                     "default": 50,
@@ -180,15 +155,6 @@
                     "minimum": 0.0,
                     "maximum": 10.0,
                     "description": "Guidance scale (recommended: 3.5)"
-                },
-                "output_format": {
-                    "type": "string",
-                    "enum": [
-                        "png",
-                        "webp"
-                    ],
-                    "default": "webp",
-                    "description": "Output image format"
                 }
             }
         },
@@ -212,24 +178,12 @@
                     "type": "string",
                     "description": "HuggingFace repo (e.g., black-forest-labs/FLUX.1-schnell)"
                 },
-                "vram_profile": {
-                    "$ref": "#/$defs/vram_profile"
-                },
                 "default_steps": {
                     "type": "integer",
                     "default": 4,
                     "minimum": 1,
                     "maximum": 10,
                     "description": "Default inference steps (optimal: 4, max: 10)"
-                },
-                "output_format": {
-                    "type": "string",
-                    "enum": [
-                        "png",
-                        "webp"
-                    ],
-                    "default": "webp",
-                    "description": "Output image format"
                 }
             }
         },
@@ -253,9 +207,6 @@
                     "type": "string",
                     "description": "HuggingFace repo: lodestones/Chroma1-Flash (4 steps), Chroma1-Base (20 steps), or Chroma1-HD (28 steps)"
                 },
-                "vram_profile": {
-                    "$ref": "#/$defs/vram_profile"
-                },
                 "default_steps": {
                     "type": "integer",
                     "default": 4,
@@ -269,15 +220,6 @@
                     "minimum": 0.0,
                     "maximum": 10.0,
                     "description": "Guidance scale (recommended: 4.0)"
-                },
-                "output_format": {
-                    "type": "string",
-                    "enum": [
-                        "png",
-                        "webp"
-                    ],
-                    "default": "webp",
-                    "description": "Output image format"
                 }
             }
         },
@@ -301,24 +243,12 @@
                     "type": "string",
                     "description": "HuggingFace repo (e.g., Tongyi-MAI/Z-Image-Turbo)"
                 },
-                "vram_profile": {
-                    "$ref": "#/$defs/vram_profile"
-                },
                 "default_steps": {
                     "type": "integer",
                     "default": 8,
                     "minimum": 1,
                     "maximum": 20,
                     "description": "Default inference steps (optimal: 8)"
-                },
-                "output_format": {
-                    "type": "string",
-                    "enum": [
-                        "png",
-                        "webp"
-                    ],
-                    "default": "webp",
-                    "description": "Output image format"
                 }
             }
         }

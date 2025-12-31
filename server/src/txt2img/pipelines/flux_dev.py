@@ -89,7 +89,9 @@ class FluxDevPipeline(BasePipeline):
             raise ValueError(f"Unsupported model reference type: {type(model_ref)}")
 
         # Apply VRAM profile
-        self._apply_vram_profile(config.vram_profile)
+        from txt2img.config import get_vram_profile
+
+        self._apply_vram_profile(get_vram_profile())
 
         logger.info(f"Flux.1 [dev] model loaded: {self._model_name}")
 

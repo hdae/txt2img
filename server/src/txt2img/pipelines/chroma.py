@@ -59,7 +59,9 @@ class ChromaPipelineImpl(BasePipeline):
         self._model_name = model_ref.split("/")[-1] if "/" in model_ref else model_ref
 
         # Apply VRAM profile
-        self._apply_vram_profile(config.vram_profile)
+        from txt2img.config import get_vram_profile
+
+        self._apply_vram_profile(get_vram_profile())
 
         logger.info(f"Chroma model loaded: {self._model_name}")
 
