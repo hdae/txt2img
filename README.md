@@ -27,13 +27,39 @@ task up
 
 Edit `.env` file:
 
-| Variable          | Description                | Required        |
-| ----------------- | -------------------------- | --------------- |
-| `CONFIG`          | Preset path or JSON config | ✓               |
-| `CIVITAI_API_KEY` | Civitai API key            | For some models |
-| `HF_TOKEN`        | HuggingFace token          | For some models |
+| Variable          | Description             | Default |
+| ----------------- | ----------------------- | ------- |
+| `CONFIG`          | Preset path (see below) | -       |
+| `VRAM_PROFILE`    | VRAM optimization mode  | `full`  |
+| `OUTPUT_FORMAT`   | Output image format     | `png`   |
+| `CIVITAI_API_KEY` | Civitai API key         | -       |
+| `HF_TOKEN`        | HuggingFace token       | -       |
+
+### Recommended Presets
+
+```bash
+# .env examples
+CONFIG=sdxl/illustrious     # SDXL Illustrious derivative
+CONFIG=chroma/flash         # Fast 4-step generation
+CONFIG=zimage/turbo         # High quality 8-step
+```
 
 See [.env.example](.env.example) for all options.
+
+### VRAM Profiles
+
+| Profile    | VRAM Target | Optimization                           |
+| ---------- | ----------- | -------------------------------------- |
+| `full`     | 24GB+       | No offloading (maximum speed)          |
+| `balanced` | 12-16GB     | Model CPU offload + VAE tiling         |
+| `lowvram`  | 8GB         | Group offload (streaming) + VAE tiling |
+
+### Output Format
+
+| Format | Description                 |
+| ------ | --------------------------- |
+| `png`  | Lossless, larger files      |
+| `webp` | Lossy (quality=95), smaller |
 
 ## Supported Models
 
@@ -45,6 +71,18 @@ See [.env.example](.env.example) for all options.
 | `chroma`       | Chroma - 8.9B lightweight Flux variant          | `chroma/flash`     |
 | `zimage`       | Z-Image Turbo - 6B fast model (8 steps)         | `zimage/turbo`     |
 
+### Model Reference Formats
+
+- **Civitai AIR**: `urn:air:sdxl:checkpoint:civitai:827184@2514310`
+- **HuggingFace**: `black-forest-labs/FLUX.1-dev`
+- **URL**: `https://example.com/model.safetensors`
+- **Local**: `file:///path/to/model.safetensors`
+
+## API Usage
+
+- **Swagger UI**: http://localhost:8000/docs
+- **Request Examples**: See [GUIDE.md](GUIDE.md)
+
 ## Preset Configuration
 
 Presets are JSON files in `server/presets/`. See
@@ -54,79 +92,21 @@ Presets are JSON files in `server/presets/`. See
 
 ```json
 {
-    "$schema": "../config.schema.json",
-    "type": "sdxl",
-    "model": "urn:air:sdxl:checkpoint:civitai:827184@2514310",
-    "vae": null,
-    "loras": [
-        { "ref": "urn:air:sdxl:lora:civitai:1377820@1963644" }
-    ],
-    "training_resolution": 1024,
-    "default_steps": 20,
-    "default_cfg": 7.0,
-    "default_sampler": "euler_a",
-    "output_format": "webp"
+  "$schema": "../config.schema.json",
+  "type": "sdxl",
+  "model": "urn:air:sdxl:checkpoint:civitai:827184@2514310",
+  "vae": null,
+  "loras": [
+    { "ref": "urn:air:sdxl:lora:civitai:1377820@1963644" }
+  ],
+  "training_resolution": 1024,
+  "default_steps": 20,
+  "default_cfg": 7.0,
+  "default_sampler": "euler_a"
 }
 ```
 
-### Model Reference Formats
-
-- **Civitai AIR**: `urn:air:sdxl:checkpoint:civitai:827184@2514310`
-- **HuggingFace**: `black-forest-labs/FLUX.1-dev`
-- **URL**: `https://example.com/model.safetensors`
-- **Local**: `file:///path/to/model.safetensors`
-
-### VRAM Profiles
-
-> **Note**: This setting is device-specific and configured via environment
-> variable only (not in presets).
-
-Set via `VRAM_PROFILE` environment variable (default: `full`):
-
-| Profile    | VRAM Target | Optimization                           |
-| ---------- | ----------- | -------------------------------------- |
-| `full`     | 24GB+       | No offloading (maximum speed)          |
-| `balanced` | 12-16GB     | Model CPU offload + VAE tiling         |
-| `lowvram`  | 8GB         | Group offload (streaming) + VAE tiling |
-
-```bash
-# In .env
-VRAM_PROFILE=balanced
-```
-
-### Output Format
-
-> **Note**: Configured via environment variable only (not in presets).
-
-Set via `OUTPUT_FORMAT` environment variable (default: `png`):
-
-| Format | Description                 |
-| ------ | --------------------------- |
-| `png`  | Lossless, larger files      |
-| `webp` | Lossy (quality=95), smaller |
-
-```bash
-# In .env
-OUTPUT_FORMAT=webp
-```
-
-## LoRA Configuration
-
-LoRAs are specified as an array of objects in preset files:
-
-```json
-{
-    "loras": [
-        { "ref": "urn:air:sdxl:lora:civitai:1377820@1963644" },
-        {
-            "ref": "https://example.com/lora.safetensors",
-            "triggers": ["mytrigger"],
-            "weight": 1.0,
-            "trigger_weight": 0.5
-        }
-    ]
-}
-```
+### LoRA Options
 
 | Property         | Description                                           | Default |
 | ---------------- | ----------------------------------------------------- | ------- |
@@ -134,16 +114,6 @@ LoRAs are specified as an array of objects in preset files:
 | `triggers`       | Trigger words (auto-detected from Civitai if omitted) | `null`  |
 | `weight`         | LoRA model weight                                     | `1.0`   |
 | `trigger_weight` | Trigger embedding weight                              | `0.5`   |
-
-### API Usage
-
-```json
-{
-    "loras": [
-        { "id": "civitai_1963644", "weight": 1.0, "trigger_weight": 0.5 }
-    ]
-}
-```
 
 ## Task Commands
 
@@ -154,53 +124,4 @@ task down         # Stop containers
 task shell        # Open shell in server
 task logs         # View logs
 task reset        # Reset server data
-```
-
-## API Endpoints
-
-| Endpoint                 | Method | Description                     |
-| ------------------------ | ------ | ------------------------------- |
-| `/health`                | GET    | Health check                    |
-| `/api/info`              | GET    | Server info (model, LoRAs, etc) |
-| `/api/generate`          | POST   | Create generation job           |
-| `/api/sse/{job_id}`      | GET    | SSE progress updates            |
-| `/api/images`            | GET    | List generated images           |
-| `/api/images/{id}.{ext}` | GET    | Get full image                  |
-| `/api/thumbs/{id}.webp`  | GET    | Get thumbnail                   |
-
-## Project Structure
-
-```
-txt2img/
-├── docker-compose.yml
-├── Taskfile.yml
-├── start.sh
-├── .env.example
-├── server/                   # Python/FastAPI backend
-│   ├── pyproject.toml
-│   ├── presets/              # Model presets
-│   │   ├── config.schema.json
-│   │   ├── sdxl/
-│   │   ├── flux/
-│   │   ├── chroma/
-│   │   └── zimage/
-│   └── src/txt2img/
-│       ├── main.py           # FastAPI entrypoint
-│       ├── config.py         # Configuration
-│       ├── api/              # API layer
-│       ├── core/             # Core modules
-│       │   ├── job_queue.py
-│       │   ├── lora_manager.py
-│       │   ├── prompt_parser.py
-│       │   └── image_processor.py
-│       ├── pipelines/        # Model pipelines
-│       │   ├── sdxl.py
-│       │   ├── flux_dev.py
-│       │   ├── flux_schnell.py
-│       │   ├── chroma.py
-│       │   └── zimage.py
-│       └── providers/        # Model providers
-│           ├── civitai.py
-│           └── huggingface.py
-└── outputs/                  # Generated images
 ```
