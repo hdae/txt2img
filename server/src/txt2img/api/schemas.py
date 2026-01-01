@@ -1,5 +1,7 @@
 """API schemas using Pydantic."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -19,17 +21,17 @@ class LoraRequest(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    """Request body for image generation."""
+    """Request body for image generation.
+
+    Note: steps, cfg_scale, sampler are fixed per pipeline and not configurable.
+    """
 
     prompt: str = Field(description="Positive prompt")
-    negative_prompt: str = Field(default="", description="Negative prompt")
+    negative_prompt: str = Field(default="", description="Negative prompt (SDXL only)")
     width: int = Field(default=1024, ge=256, le=2048, description="Image width")
     height: int = Field(default=1024, ge=256, le=2048, description="Image height")
-    steps: int = Field(default=20, ge=1, le=100, description="Number of inference steps")
-    cfg_scale: float = Field(default=7.0, ge=1.0, le=30.0, description="CFG scale")
     seed: int | None = Field(default=None, description="Random seed (null for random)")
-    sampler: str = Field(default="euler", description="Sampler name")
-    loras: list[LoraRequest] | None = Field(default=None, description="LoRAs to apply with weights")
+    loras: list[LoraRequest] | None = Field(default=None, description="LoRAs to apply (SDXL only)")
 
 
 class GenerateResponse(BaseModel):
@@ -73,6 +75,9 @@ class ServerInfo(BaseModel):
     model_name: str
     training_resolution: str
     available_loras: list[LoraInfo] = Field(default_factory=list)
+    parameter_schema: dict[str, Any] = Field(
+        default_factory=dict, description="JSON Schema for generation parameters"
+    )
 
 
 class ErrorResponse(BaseModel):

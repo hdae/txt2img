@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 # Default model for Flux.1 [dev]
 DEFAULT_FLUX_DEV_MODEL = "black-forest-labs/FLUX.1-dev"
 
+# Fixed generation parameters for Flux.1 [dev]
+FLUX_DEV_FIXED_STEPS = 50
+FLUX_DEV_FIXED_CFG_SCALE = 3.5
+
 
 class FluxDevPipeline(BasePipeline):
     """Flux.1 [dev] Pipeline - guidance-distilled variant.
@@ -47,6 +51,41 @@ class FluxDevPipeline(BasePipeline):
     def model_name(self) -> str:
         """Get the loaded model name."""
         return self._model_name
+
+    def get_parameter_schema(self) -> dict[str, Any]:
+        """Get JSON Schema for Flux.1 [dev] generation parameters."""
+        return {
+            "model_type": "flux",
+            "prompt_style": "natural",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Natural language prompt",
+                },
+                "width": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "height": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "seed": {
+                    "type": ["integer", "null"],
+                    "default": None,
+                    "description": "Random seed (null for random)",
+                },
+            },
+            "required": ["prompt"],
+            "fixed": {
+                "steps": FLUX_DEV_FIXED_STEPS,
+                "cfg_scale": FLUX_DEV_FIXED_CFG_SCALE,
+            },
+        }
 
     async def load_model(self) -> None:
         """Load Flux.1 [dev] model from various sources."""
@@ -129,21 +168,13 @@ class FluxDevPipeline(BasePipeline):
         params: GenerationParams,
         progress_callback: Callable[[int, str | None], Any] | None = None,
     ) -> SavedImage:
-        """Generate image using Flux.1 [dev].
-
-        Flux.1 [dev] specifics:
-        - guidance_scale around 3.5
-        - Recommended ~50 steps
-        """
+        """Generate image using Flux.1 [dev]."""
         if not self.pipe:
             raise RuntimeError("Pipeline not loaded")
 
-        steps = params.steps if params.steps else 50
-        guidance_scale = params.cfg_scale if params.cfg_scale else 3.5
-
         logger.info(
             f"Starting Flux.1 [dev] generation: "
-            f"prompt={params.prompt[:50]}, steps={steps}, guidance={guidance_scale}"
+            f"prompt={params.prompt[:50]}, steps={FLUX_DEV_FIXED_STEPS}"
         )
 
         # Determine seed
@@ -160,8 +191,8 @@ class FluxDevPipeline(BasePipeline):
                     prompt=params.prompt,
                     height=params.height,
                     width=params.width,
-                    num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
+                    num_inference_steps=FLUX_DEV_FIXED_STEPS,
+                    guidance_scale=FLUX_DEV_FIXED_CFG_SCALE,
                     generator=generator,
                 )
 
@@ -174,10 +205,10 @@ class FluxDevPipeline(BasePipeline):
         # Save image with metadata
         metadata = ImageMetadata(
             prompt=params.prompt,
-            negative_prompt=params.negative_prompt,
+            negative_prompt="",
             seed=seed,
-            steps=steps,
-            cfg_scale=guidance_scale,
+            steps=FLUX_DEV_FIXED_STEPS,
+            cfg_scale=FLUX_DEV_FIXED_CFG_SCALE,
             width=params.width,
             height=params.height,
             sampler="flux_dev",

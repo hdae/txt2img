@@ -2,7 +2,7 @@
 
 import pytest
 
-from txt2img.models.air_parser import (
+from txt2img.utils.air_parser import (
     AIRResource,
     HuggingFaceResource,
     ModelEcosystem,

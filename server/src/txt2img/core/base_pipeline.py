@@ -41,3 +41,12 @@ class BasePipeline(ABC):
             SavedImage with result
         """
         pass
+
+    @abstractmethod
+    def get_parameter_schema(self) -> dict[str, Any]:
+        """Get JSON Schema for generation parameters.
+
+        Returns a schema describing what parameters this pipeline accepts.
+        Each pipeline returns a different schema based on its capabilities.
+        """
+        pass

@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 # Default model for Flux.1 [schnell]
 DEFAULT_FLUX_SCHNELL_MODEL = "black-forest-labs/FLUX.1-schnell"
 
+# Fixed generation parameters for Flux.1 [schnell]
+FLUX_SCHNELL_FIXED_STEPS = 4
+FLUX_SCHNELL_FIXED_CFG_SCALE = 0.0  # Must be 0 for schnell
+
 
 class FluxSchnellPipeline(BasePipeline):
     """Flux.1 [schnell] Pipeline - timestep-distilled variant.
@@ -47,6 +51,41 @@ class FluxSchnellPipeline(BasePipeline):
     def model_name(self) -> str:
         """Get the loaded model name."""
         return self._model_name
+
+    def get_parameter_schema(self) -> dict[str, Any]:
+        """Get JSON Schema for Flux.1 [schnell] generation parameters."""
+        return {
+            "model_type": "flux_schnell",
+            "prompt_style": "natural",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Natural language prompt",
+                },
+                "width": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "height": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "seed": {
+                    "type": ["integer", "null"],
+                    "default": None,
+                    "description": "Random seed (null for random)",
+                },
+            },
+            "required": ["prompt"],
+            "fixed": {
+                "steps": FLUX_SCHNELL_FIXED_STEPS,
+                "cfg_scale": FLUX_SCHNELL_FIXED_CFG_SCALE,
+            },
+        }
 
     async def load_model(self) -> None:
         """Load Flux.1 [schnell] model from various sources."""
@@ -129,22 +168,13 @@ class FluxSchnellPipeline(BasePipeline):
         params: GenerationParams,
         progress_callback: Callable[[int, str | None], Any] | None = None,
     ) -> SavedImage:
-        """Generate image using Flux.1 [schnell].
-
-        Flux.1 [schnell] specifics:
-        - guidance_scale MUST be 0 (timestep-distilled)
-        - max_sequence_length limited to 256
-        - Optimal at 4 inference steps
-        """
+        """Generate image using Flux.1 [schnell]."""
         if not self.pipe:
             raise RuntimeError("Pipeline not loaded")
 
-        # Flux.1 [schnell] MUST use these settings
-        steps = params.steps if params.steps else 4
-        guidance_scale = 0.0  # Must be 0 for schnell
-
         logger.info(
-            f"Starting Flux.1 [schnell] generation: prompt={params.prompt[:50]}, steps={steps}"
+            f"Starting Flux.1 [schnell] generation: "
+            f"prompt={params.prompt[:50]}, steps={FLUX_SCHNELL_FIXED_STEPS}"
         )
 
         # Determine seed
@@ -161,8 +191,8 @@ class FluxSchnellPipeline(BasePipeline):
                     prompt=params.prompt,
                     height=params.height,
                     width=params.width,
-                    num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
+                    num_inference_steps=FLUX_SCHNELL_FIXED_STEPS,
+                    guidance_scale=FLUX_SCHNELL_FIXED_CFG_SCALE,
                     max_sequence_length=256,  # Must be <= 256 for schnell
                     generator=generator,
                 )
@@ -176,10 +206,10 @@ class FluxSchnellPipeline(BasePipeline):
         # Save image with metadata
         metadata = ImageMetadata(
             prompt=params.prompt,
-            negative_prompt=params.negative_prompt,
+            negative_prompt="",
             seed=seed,
-            steps=steps,
-            cfg_scale=guidance_scale,
+            steps=FLUX_SCHNELL_FIXED_STEPS,
+            cfg_scale=FLUX_SCHNELL_FIXED_CFG_SCALE,
             width=params.width,
             height=params.height,
             sampler="flux_schnell",

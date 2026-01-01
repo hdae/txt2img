@@ -22,16 +22,16 @@ class JobStatus(str, Enum):
 
 @dataclass
 class GenerationParams:
-    """Parameters for image generation."""
+    """Parameters for image generation.
+
+    Note: steps, cfg_scale, sampler are fixed per pipeline.
+    """
 
     prompt: str
     negative_prompt: str = ""
     width: int = 1024
     height: int = 1024
-    steps: int = 20
-    cfg_scale: float = 7.0
     seed: int | None = None
-    sampler: str = "euler"
     loras: list[dict] | None = None  # [{"id": "...", "weight": 1.0}]
 
 

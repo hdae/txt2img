@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 # Default model for Z-Image Turbo
 DEFAULT_ZIMAGE_MODEL = "Tongyi-MAI/Z-Image-Turbo"
 
+# Fixed generation parameters for Z-Image Turbo
+ZIMAGE_FIXED_STEPS = 8
+ZIMAGE_FIXED_CFG_SCALE = 0.0
+
 
 class ZImagePipelineImpl(BasePipeline):
     """Z-Image Turbo Pipeline - 6B parameter fast text-to-image model.
@@ -40,6 +44,41 @@ class ZImagePipelineImpl(BasePipeline):
     def model_name(self) -> str:
         """Get the loaded model name."""
         return self._model_name
+
+    def get_parameter_schema(self) -> dict[str, Any]:
+        """Get JSON Schema for Z-Image Turbo generation parameters."""
+        return {
+            "model_type": "zimage",
+            "prompt_style": "natural",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Natural language prompt",
+                },
+                "width": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "height": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "seed": {
+                    "type": ["integer", "null"],
+                    "default": None,
+                    "description": "Random seed (null for random)",
+                },
+            },
+            "required": ["prompt"],
+            "fixed": {
+                "steps": ZIMAGE_FIXED_STEPS,
+                "cfg_scale": ZIMAGE_FIXED_CFG_SCALE,
+            },
+        }
 
     async def load_model(self) -> None:
         """Load Z-Image Turbo model."""
@@ -101,22 +140,13 @@ class ZImagePipelineImpl(BasePipeline):
         params: GenerationParams,
         progress_callback: Callable[[int, str | None], Any] | None = None,
     ) -> SavedImage:
-        """Generate image using Z-Image Turbo.
-
-        Z-Image Turbo specifics:
-        - guidance_scale should be 0.0 for best results
-        - Optimal at 8 inference steps
-        """
+        """Generate image using Z-Image Turbo."""
         if not self.pipe:
             raise RuntimeError("Pipeline not loaded")
 
-        # Z-Image Turbo defaults
-        steps = params.steps if params.steps else 8
-        guidance_scale = 0.0  # Z-Image Turbo works best with 0.0
-
         logger.info(
             f"Starting Z-Image Turbo generation: "
-            f"prompt={params.prompt[:50]}, steps={steps}"
+            f"prompt={params.prompt[:50]}, steps={ZIMAGE_FIXED_STEPS}"
         )
 
         # Determine seed
@@ -133,8 +163,8 @@ class ZImagePipelineImpl(BasePipeline):
                     prompt=params.prompt,
                     height=params.height,
                     width=params.width,
-                    num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
+                    num_inference_steps=ZIMAGE_FIXED_STEPS,
+                    guidance_scale=ZIMAGE_FIXED_CFG_SCALE,
                     generator=generator,
                 )
 
@@ -147,10 +177,10 @@ class ZImagePipelineImpl(BasePipeline):
         # Save image with metadata
         metadata = ImageMetadata(
             prompt=params.prompt,
-            negative_prompt=params.negative_prompt,
+            negative_prompt="",
             seed=seed,
-            steps=steps,
-            cfg_scale=guidance_scale,
+            steps=ZIMAGE_FIXED_STEPS,
+            cfg_scale=ZIMAGE_FIXED_CFG_SCALE,
             width=params.width,
             height=params.height,
             sampler="zimage_turbo",

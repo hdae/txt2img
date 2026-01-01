@@ -43,6 +43,11 @@ SCHEDULERS = {
     "dpm++_2m": DPMSolverMultistepScheduler,
 }
 
+# Fixed generation parameters for SDXL
+SDXL_FIXED_STEPS = 20
+SDXL_FIXED_CFG_SCALE = 7.0
+SDXL_FIXED_SAMPLER = "euler_a"
+
 
 class SDXLPipeline(BasePipeline):
     """SDXL Pipeline manager with model configuration support."""
@@ -57,6 +62,71 @@ class SDXLPipeline(BasePipeline):
     def model_name(self) -> str:
         """Get the loaded model name."""
         return self._model_name
+
+    def get_parameter_schema(self) -> dict[str, Any]:
+        """Get JSON Schema for SDXL generation parameters."""
+        return {
+            "model_type": "sdxl",
+            "prompt_style": "tags",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Tag-based prompt (comma-separated)",
+                },
+                "negative_prompt": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Negative prompt (tags to avoid)",
+                },
+                "width": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "height": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "seed": {
+                    "type": ["integer", "null"],
+                    "default": None,
+                    "description": "Random seed (null for random)",
+                },
+                "loras": {
+                    "type": ["array", "null"],
+                    "default": None,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "weight": {
+                                "type": "number",
+                                "default": 1.0,
+                                "minimum": 0.0,
+                                "maximum": 2.0,
+                            },
+                            "trigger_weight": {
+                                "type": "number",
+                                "default": 0.5,
+                                "minimum": 0.0,
+                                "maximum": 2.0,
+                            },
+                        },
+                        "required": ["id"],
+                    },
+                    "description": "LoRAs to apply (get IDs from available_loras)",
+                },
+            },
+            "required": ["prompt"],
+            "fixed": {
+                "steps": SDXL_FIXED_STEPS,
+                "cfg_scale": SDXL_FIXED_CFG_SCALE,
+                "sampler": SDXL_FIXED_SAMPLER,
+            },
+        }
 
     async def load_model(self) -> None:
         """Load model from ModelConfig."""
@@ -334,12 +404,12 @@ class SDXLPipeline(BasePipeline):
                 self.pipe.disable_lora()
                 logger.info("Disabled all LoRA adapters (none requested)")
 
-        logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={params.steps}")
+        logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={SDXL_FIXED_STEPS}")
 
-        # Set scheduler
-        scheduler_class = SCHEDULERS.get(params.sampler, EulerDiscreteScheduler)
+        # Set scheduler (fixed)
+        scheduler_class = SCHEDULERS.get(SDXL_FIXED_SAMPLER, EulerAncestralDiscreteScheduler)
         self.pipe.scheduler = scheduler_class.from_config(self.pipe.scheduler.config)
-        logger.info(f"Scheduler set: {params.sampler}")
+        logger.info(f"Scheduler set: {SDXL_FIXED_SAMPLER}")
 
         # Determine seed
         seed = params.seed if params.seed is not None else random.randint(0, 2**32 - 1)
@@ -370,8 +440,8 @@ class SDXLPipeline(BasePipeline):
                     negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
                     width=params.width,
                     height=params.height,
-                    num_inference_steps=params.steps,
-                    guidance_scale=params.cfg_scale,
+                    num_inference_steps=SDXL_FIXED_STEPS,
+                    guidance_scale=SDXL_FIXED_CFG_SCALE,
                     generator=generator,
                 )
 
@@ -392,11 +462,11 @@ class SDXLPipeline(BasePipeline):
             prompt=saved_prompt,
             negative_prompt=params.negative_prompt,
             seed=seed,
-            steps=params.steps,
-            cfg_scale=params.cfg_scale,
+            steps=SDXL_FIXED_STEPS,
+            cfg_scale=SDXL_FIXED_CFG_SCALE,
             width=params.width,
             height=params.height,
-            sampler=params.sampler,
+            sampler=SDXL_FIXED_SAMPLER,
             model_name=self.model_name,
             loras=lora_names,
         )

@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 # Default model for Chroma
 DEFAULT_CHROMA_MODEL = "lodestones/Chroma1-Flash"
 
+# Fixed generation parameters for Chroma
+CHROMA_FIXED_STEPS = 4
+CHROMA_FIXED_CFG_SCALE = 4.0
+
 
 class ChromaPipelineImpl(BasePipeline):
     """Chroma Pipeline - lightweight 8.9B parameter Flux variant.
@@ -38,6 +42,41 @@ class ChromaPipelineImpl(BasePipeline):
     def model_name(self) -> str:
         """Get the loaded model name."""
         return self._model_name
+
+    def get_parameter_schema(self) -> dict[str, Any]:
+        """Get JSON Schema for Chroma generation parameters."""
+        return {
+            "model_type": "chroma",
+            "prompt_style": "natural",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Natural language prompt",
+                },
+                "width": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "height": {
+                    "type": "integer",
+                    "default": 1024,
+                    "minimum": 256,
+                    "maximum": 2048,
+                },
+                "seed": {
+                    "type": ["integer", "null"],
+                    "default": None,
+                    "description": "Random seed (null for random)",
+                },
+            },
+            "required": ["prompt"],
+            "fixed": {
+                "steps": CHROMA_FIXED_STEPS,
+                "cfg_scale": CHROMA_FIXED_CFG_SCALE,
+            },
+        }
 
     async def load_model(self) -> None:
         """Load Chroma model."""
@@ -99,23 +138,13 @@ class ChromaPipelineImpl(BasePipeline):
         params: GenerationParams,
         progress_callback: Callable[[int, str | None], Any] | None = None,
     ) -> SavedImage:
-        """Generate image using Chroma.
-
-        Chroma specifics:
-        - Uses single T5 encoder
-        - Recommended 4-20 steps depending on variant
-        - guidance_scale around 3.5-7.5
-        """
+        """Generate image using Chroma."""
         if not self.pipe:
             raise RuntimeError("Pipeline not loaded")
 
-        # Chroma defaults
-        steps = params.steps if params.steps else 4
-        guidance_scale = params.cfg_scale if params.cfg_scale else 4.0
-
         logger.info(
             f"Starting Chroma generation: "
-            f"prompt={params.prompt[:50]}, steps={steps}, guidance={guidance_scale}"
+            f"prompt={params.prompt[:50]}, steps={CHROMA_FIXED_STEPS}"
         )
 
         # Determine seed
@@ -131,9 +160,9 @@ class ChromaPipelineImpl(BasePipeline):
                 return self.pipe(
                     prompt=params.prompt,
                     height=params.height,
-                    width=params.height,
-                    num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
+                    width=params.width,
+                    num_inference_steps=CHROMA_FIXED_STEPS,
+                    guidance_scale=CHROMA_FIXED_CFG_SCALE,
                     generator=generator,
                 )
 
@@ -146,10 +175,10 @@ class ChromaPipelineImpl(BasePipeline):
         # Save image with metadata
         metadata = ImageMetadata(
             prompt=params.prompt,
-            negative_prompt=params.negative_prompt,
+            negative_prompt="",
             seed=seed,
-            steps=steps,
-            cfg_scale=guidance_scale,
+            steps=CHROMA_FIXED_STEPS,
+            cfg_scale=CHROMA_FIXED_CFG_SCALE,
             width=params.width,
             height=params.height,
             sampler="chroma",

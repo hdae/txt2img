@@ -1,6 +1,8 @@
 version: "3"
 
 # Automatically detect host UID/GID on Linux/Unix
+dotenv: [".env"]
+
 vars:
   PUID:
     sh: command -v id >/dev/null 2>&1 && echo ${PUID:-$(id -u)} || echo ${PUID:-1000}
@@ -87,3 +89,47 @@ tasks:
     cmds:
       - rm -rf outputs/*
       - echo "✓ Outputs cleaned."
+
+  deploy.build:
+    desc: Build deployment image
+    vars:
+      DATE:
+        sh: date +%Y%m%d
+      TAG: "{{.TAG | default .DATE}}"
+      IMAGE: "hdae/txt2img"
+    cmds:
+      - docker build -t {{.IMAGE}}:{{.TAG}} -t {{.IMAGE}}:latest -f deploy/Dockerfile .
+      - echo "✓ Built {{.IMAGE}}:{{.TAG}} and {{.IMAGE}}:latest"
+
+  deploy.push:
+    desc: Push deployment image
+    vars:
+      DATE:
+        sh: date +%Y%m%d
+      TAG: "{{.TAG | default .DATE}}"
+      IMAGE: "hdae/txt2img"
+    cmds:
+      - docker push {{.IMAGE}}:{{.TAG}}
+      - docker push {{.IMAGE}}:latest
+      - echo "✓ Pushed {{.IMAGE}}:{{.TAG}} and {{.IMAGE}}:latest"
+
+  deploy:
+    desc: Build and push deployment image
+    deps: [deploy.build, deploy.push]
+
+  deploy.run:
+    desc: Run deployment image locally
+    vars:
+      IMAGE: "hdae/txt2img"
+    cmds:
+      - |
+          docker run --rm -it \
+            --name txt2img-deploy \
+            --gpus all \
+            -p 8000:8000 \
+            -v $(pwd)/models:/workspace/models \
+            -v $(pwd)/outputs:/workspace/outputs \
+            -e CONFIG=civitai/il_wai \
+            -e CIVITAI_API_KEY=${CIVITAI_API_KEY} \
+            -e VRAM_PROFILE=lowvram \
+            {{.IMAGE}}:latest

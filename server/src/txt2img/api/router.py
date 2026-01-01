@@ -54,10 +54,7 @@ async def generate_image(request: GenerateRequest) -> GenerateResponse:
         negative_prompt=request.negative_prompt,
         width=request.width,
         height=request.height,
-        steps=request.steps,
-        cfg_scale=request.cfg_scale,
         seed=request.seed,
-        sampler=request.sampler,
         loras=loras_list,
     )
 
@@ -161,4 +158,5 @@ async def get_server_info() -> ServerInfo:
         model_name=get_pipeline().model_name or "Not loaded",
         training_resolution=str(config.training_resolution),
         available_loras=available_loras,
+        parameter_schema=get_pipeline().get_parameter_schema(),
     )
