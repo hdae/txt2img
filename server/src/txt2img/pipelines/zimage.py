@@ -183,9 +183,7 @@ class ZImagePipelineImpl(BasePipeline):
             cfg_scale=ZIMAGE_FIXED_CFG_SCALE,
             width=params.width,
             height=params.height,
-            sampler="zimage_turbo",
             model_name=self._model_name,
-            loras=None,
         )
 
         saved = save_image(image, metadata)

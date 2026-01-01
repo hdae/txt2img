@@ -21,7 +21,7 @@ def get_pipeline() -> BasePipeline:
             _pipeline = SDXLPipeline()
         elif config.type == ModelType.SD3:
             raise NotImplementedError("SD3 pipeline not yet implemented")
-        elif config.type == ModelType.FLUX:
+        elif config.type == ModelType.FLUX_DEV:
             from txt2img.pipelines.flux_dev import FluxDevPipeline
 
             _pipeline = FluxDevPipeline()

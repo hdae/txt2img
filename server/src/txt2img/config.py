@@ -40,7 +40,7 @@ class ModelType(str, Enum):
 
     SDXL = "sdxl"  # Stable Diffusion XL and derivatives (Illustrious, etc.)
     SD3 = "sd3"  # Stable Diffusion 3.x
-    FLUX = "flux"  # Flux.1 [dev] - guidance-distilled (50 steps)
+    FLUX_DEV = "flux_dev"  # Flux.1 [dev] - guidance-distilled (50 steps)
     FLUX_SCHNELL = "flux_schnell"  # Flux.1 [schnell] - timestep-distilled (4 steps)
     CHROMA = "chroma"  # Chroma - 8.9B lightweight Flux variant
     ZIMAGE = "zimage"  # Z-Image Turbo - 6B fast (8 steps, 16GB VRAM)

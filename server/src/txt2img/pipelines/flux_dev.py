@@ -55,7 +55,7 @@ class FluxDevPipeline(BasePipeline):
     def get_parameter_schema(self) -> dict[str, Any]:
         """Get JSON Schema for Flux.1 [dev] generation parameters."""
         return {
-            "model_type": "flux",
+            "model_type": "flux_dev",
             "prompt_style": "natural",
             "properties": {
                 "prompt": {
@@ -211,9 +211,7 @@ class FluxDevPipeline(BasePipeline):
             cfg_scale=FLUX_DEV_FIXED_CFG_SCALE,
             width=params.width,
             height=params.height,
-            sampler="flux_dev",
             model_name=self._model_name,
-            loras=None,
         )
 
         saved = save_image(image, metadata)

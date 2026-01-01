@@ -1,7 +1,10 @@
 # txt2img API Guide
 
-This guide provides complete request body examples for different model types.
-Examples use JSONC format with comments to highlight model-specific parameters.
+This guide provides request body examples for different model types.
+
+> **Note**: `steps`, `cfg_scale`, and `sampler` are now fixed per model and
+> cannot be changed via API. Use `/api/info` to see the `parameter_schema` with
+> fixed values for the current model.
 
 ## SDXL / Illustrious
 
@@ -10,13 +13,10 @@ Best for anime-style illustrations with detailed prompts.
 ```jsonc
 {
     "prompt": "masterpiece, best quality, 1girl, solo, long blonde hair, blue eyes, white dress, flower garden, soft lighting",
-    "negative_prompt": "worst quality, low quality, blurry, bad anatomy, bad hands, watermark", // Important for SDXL
+    "negative_prompt": "worst quality, low quality, blurry, bad anatomy, bad hands, watermark",
     "width": 1024,
     "height": 1024,
-    "steps": 20, // Recommended: 20-30
-    "cfg_scale": 7.0, // Recommended: 5.0-8.0
     "seed": 42, // null for random
-    "sampler": "euler_a", // euler_a recommended for SDXL
     "loras": [] // SDXL only: LoRA support
 }
 ```
@@ -29,10 +29,7 @@ Best for anime-style illustrations with detailed prompts.
     "negative_prompt": "worst quality, low quality",
     "width": 1024,
     "height": 1024,
-    "steps": 20,
-    "cfg_scale": 7.0,
     "seed": null,
-    "sampler": "euler_a",
     "loras": [
         {
             "id": "civitai_1963644", // Get from /api/info
@@ -50,83 +47,39 @@ Best for anime-style illustrations with detailed prompts.
 Lightweight Flux variant. Works well with natural language prompts. **LoRA not
 supported.**
 
-### Chroma Flash (4 steps)
-
 ```jsonc
 {
     "prompt": "a fluffy orange cat sleeping on a sunny windowsill, soft natural light",
-    "negative_prompt": "", // Optional for Chroma
     "width": 1024,
     "height": 1024,
-    "steps": 4, // Flash: 4 steps optimal
-    "cfg_scale": 4.0, // Recommended: 3.5-4.5
-    "seed": null,
-    "sampler": "euler"
+    "seed": null
 }
 ```
 
-### Chroma Base (20 steps)
+## Flux Dev
 
-```jsonc
-{
-    "prompt": "portrait of a woman with auburn hair, professional photography, studio lighting, magazine cover quality",
-    "negative_prompt": "",
-    "width": 1024,
-    "height": 1024,
-    "steps": 20, // Base: 20 steps recommended
-    "cfg_scale": 4.0,
-    "seed": 12345,
-    "sampler": "euler"
-}
-```
-
-### Chroma HD (28 steps)
-
-```jsonc
-{
-    "prompt": "detailed cityscape at night, neon lights, cyberpunk aesthetic, rain reflections on wet streets",
-    "negative_prompt": "",
-    "width": 1024,
-    "height": 1024,
-    "steps": 28, // HD: 28 steps for highest quality
-    "cfg_scale": 4.0,
-    "seed": null,
-    "sampler": "euler"
-}
-```
-
-## Flux
-
-High quality text understanding. Use natural language prompts. **LoRA not
-supported.**
-
-### Flux Dev (~50 steps)
+High quality with strong text understanding. Use natural language prompts.
+**LoRA not supported.**
 
 ```jsonc
 {
     "prompt": "A photorealistic landscape of snow-capped mountains reflected in a crystal clear alpine lake during golden hour",
-    "negative_prompt": "", // Flux ignores negative prompt
     "width": 1024,
     "height": 1024,
-    "steps": 50, // Dev: 50 steps recommended
-    "cfg_scale": 3.5, // Recommended: 3.0-4.0
-    "seed": null,
-    "sampler": "euler"
+    "seed": null
 }
 ```
 
-### Flux Schnell (4 steps)
+## Flux Schnell
+
+Fast 4-step variant. **LoRA not supported.**
 
 ```jsonc
 {
     "prompt": "minimalist logo design, geometric shapes, clean lines, modern branding",
-    "negative_prompt": "",
     "width": 1024,
     "height": 1024,
-    "steps": 4, // Schnell: 4 steps optimal (max 10)
-    "cfg_scale": 0.0, // Schnell: guidance-distilled, cfg ignored
-    "seed": 999,
-    "sampler": "euler"
+    "seed": 999
 }
 ```
 
@@ -137,69 +90,34 @@ Fast 8-step model with excellent text rendering. **LoRA not supported.**
 ```jsonc
 {
     "prompt": "A vintage coffee shop interior with warm lighting, wooden furniture, and a chalkboard menu displaying 'Today's Special'",
-    "negative_prompt": "",
     "width": 1024,
     "height": 1024,
-    "steps": 8, // 8 steps optimal
-    "cfg_scale": 1.0, // Low cfg recommended
-    "seed": null,
-    "sampler": "euler"
-}
-```
-
-### Landscape
-
-```jsonc
-{
-    "prompt": "drone photography of winding river through autumn forest, vibrant fall colors, aerial view",
-    "negative_prompt": "blurry, oversaturated",
-    "width": 1344, // 16:9 aspect ratio
-    "height": 768,
-    "steps": 8,
-    "cfg_scale": 1.0,
-    "seed": 54321,
-    "sampler": "euler"
+    "seed": null
 }
 ```
 
 ## Parameter Reference
 
-| Parameter         | Type          | Default   | Range     | Description                     |
-| ----------------- | ------------- | --------- | --------- | ------------------------------- |
-| `prompt`          | string        | required  | -         | Image description               |
-| `negative_prompt` | string        | `""`      | -         | What to avoid                   |
-| `width`           | int           | `1024`    | 256-2048  | Image width in pixels           |
-| `height`          | int           | `1024`    | 256-2048  | Image height in pixels          |
-| `steps`           | int           | `20`      | 1-100     | Inference steps                 |
-| `cfg_scale`       | float         | `7.0`     | 1.0-30.0  | Prompt adherence strength       |
-| `seed`            | int \| null   | `null`    | 0-2^32    | Random seed (null = random)     |
-| `sampler`         | string        | `"euler"` | see below | Sampling algorithm              |
-| `loras`           | array \| null | `null`    | -         | LoRA configurations (SDXL only) |
+| Parameter         | Type          | Default  | Range    | Description                     |
+| ----------------- | ------------- | -------- | -------- | ------------------------------- |
+| `prompt`          | string        | required | -        | Image description               |
+| `negative_prompt` | string        | `""`     | -        | What to avoid (SDXL only)       |
+| `width`           | int           | `1024`   | 256-2048 | Image width in pixels           |
+| `height`          | int           | `1024`   | 256-2048 | Image height in pixels          |
+| `seed`            | int \| null   | `null`   | 0-2^32   | Random seed (null = random)     |
+| `loras`           | array \| null | `null`   | -        | LoRA configurations (SDXL only) |
 
-### Model-Specific Recommendations
+### Fixed Parameters (per model)
 
-| Model         | Steps | CFG Scale | Notes                        |
-| ------------- | ----- | --------- | ---------------------------- |
-| SDXL          | 20-30 | 5.0-8.0   | Use negative_prompt, LoRA OK |
-| Chroma Flash  | 4     | 4.0       | Fast, lower quality          |
-| Chroma Base   | 20    | 4.0       | Balanced                     |
-| Chroma HD     | 28    | 4.0       | Highest quality              |
-| Flux Dev      | 50    | 3.5       | High quality, slow           |
-| Flux Schnell  | 4     | 0.0       | Fast, cfg ignored            |
-| Z-Image Turbo | 8     | 1.0       | Fast, good text rendering    |
+These parameters are fixed per model and retrieved via `/api/info`:
 
-### Samplers
-
-| Sampler        | Description                |
-| -------------- | -------------------------- |
-| `euler`        | Fast, general purpose      |
-| `euler_a`      | Euler ancestral (creative) |
-| `dpm++_2m`     | High quality, slower       |
-| `dpm++_2m_sde` | DPM++ with SDE             |
-| `dpm++_sde`    | DPM++ SDE variant          |
-| `ddim`         | Deterministic              |
-| `heun`         | Second-order accuracy      |
-| `lms`          | Linear multi-step          |
+| Model         | Steps | CFG Scale | Sampler |
+| ------------- | ----- | --------- | ------- |
+| SDXL          | 20    | 7.0       | euler_a |
+| Chroma        | 4     | 4.0       | -       |
+| Flux Dev      | 50    | 3.5       | -       |
+| Flux Schnell  | 4     | 0.0       | -       |
+| Z-Image Turbo | 8     | 0.0       | -       |
 
 ### LoRA Object (SDXL only)
 

@@ -7,7 +7,7 @@
             "$ref": "#/$defs/sdxl"
         },
         {
-            "$ref": "#/$defs/flux"
+            "$ref": "#/$defs/flux_dev"
         },
         {
             "$ref": "#/$defs/flux_schnell"
@@ -122,7 +122,7 @@
                 }
             }
         },
-        "flux": {
+        "flux_dev": {
             "type": "object",
             "required": [
                 "type",
@@ -135,7 +135,7 @@
                     "description": "JSON Schema reference"
                 },
                 "type": {
-                    "const": "flux",
+                    "const": "flux_dev",
                     "description": "FLUX.1 [dev] model type (guidance-distilled, ~50 steps)"
                 },
                 "model": {

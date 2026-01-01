@@ -28,8 +28,8 @@ class ImageMetadata:
     cfg_scale: float
     width: int
     height: int
-    sampler: str
     model_name: str
+    sampler: str | None = None  # SDXL only
     loras: list[str] | None = None
     created_at: str | None = None
 
@@ -42,12 +42,14 @@ class ImageMetadata:
 
         params = [
             f"Steps: {self.steps}",
-            f"Sampler: {self.sampler}",
             f"CFG scale: {self.cfg_scale}",
             f"Seed: {self.seed}",
             f"Size: {self.width}x{self.height}",
             f"Model: {self.model_name}",
         ]
+
+        if self.sampler:
+            params.insert(1, f"Sampler: {self.sampler}")
 
         if self.loras:
             lora_str = ", ".join(self.loras)

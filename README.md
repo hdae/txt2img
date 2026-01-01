@@ -66,7 +66,7 @@ See [.env.example](.env.example) for all options.
 | Type           | Description                                     | Example Preset     |
 | -------------- | ----------------------------------------------- | ------------------ |
 | `sdxl`         | SDXL and derivatives (Illustrious, etc.)        | `sdxl/illustrious` |
-| `flux`         | Flux.1 [dev] - guidance-distilled (~50 steps)   | `flux/dev`         |
+| `flux_dev`     | Flux.1 [dev] - guidance-distilled (~50 steps)   | `flux/dev`         |
 | `flux_schnell` | Flux.1 [schnell] - timestep-distilled (4 steps) | `flux/schnell`     |
 | `chroma`       | Chroma - 8.9B lightweight Flux variant          | `chroma/flash`     |
 | `zimage`       | Z-Image Turbo - 6B fast model (8 steps)         | `zimage/turbo`     |

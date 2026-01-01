@@ -212,9 +212,7 @@ class FluxSchnellPipeline(BasePipeline):
             cfg_scale=FLUX_SCHNELL_FIXED_CFG_SCALE,
             width=params.width,
             height=params.height,
-            sampler="flux_schnell",
             model_name=self._model_name,
-            loras=None,
         )
 
         saved = save_image(image, metadata)
