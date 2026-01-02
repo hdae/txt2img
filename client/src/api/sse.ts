@@ -2,7 +2,7 @@
  * SSE (Server-Sent Events) utilities
  */
 
-export interface SSEOptions {
+interface SSEOptions {
     onMessage: (event: string, data: unknown) => void
     onError?: (error: Event) => void
     onOpen?: () => void
@@ -31,7 +31,7 @@ const DEFAULT_GALLERY_EVENT_TYPES = [
 /**
  * Create an SSE connection and return cleanup function
  */
-export function createSSEConnection(
+function createSSEConnection(
     url: string,
     options: SSEOptions
 ): () => void {

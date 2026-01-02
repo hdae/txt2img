@@ -11,7 +11,7 @@ import type {
 
 const API_BASE = "/api"
 
-export class APIError extends Error {
+class APIError extends Error {
     public status: number
     public statusText: string
     public detail?: string

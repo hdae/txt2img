@@ -61,19 +61,14 @@ export interface ServerInfo {
     parameter_schema: ParameterSchema
 }
 
-export interface ErrorResponse {
-    error: string
-    detail?: string
-}
-
 // =============================================================================
 // Parameter Schema (from /api/info)
 // =============================================================================
 
-export type PromptStyle = "tags" | "natural"
-export type ModelType = "sdxl" | "chroma" | "flux_dev" | "flux_schnell" | "zimage"
+type PromptStyle = "tags" | "natural"
+type ModelType = "sdxl" | "chroma" | "flux_dev" | "flux_schnell" | "zimage"
 
-export interface PropertySchema {
+interface PropertySchema {
     type: string | string[]
     default?: unknown
     description?: string
@@ -97,46 +92,3 @@ export interface ParameterSchema {
         sampler?: string
     }
 }
-
-// =============================================================================
-// SSE Event Types
-// =============================================================================
-
-export interface SSEStatusEvent {
-    status: "queued" | "processing" | "completed" | "failed"
-    progress?: number
-    queue_position?: number
-}
-
-export interface SSEProgressEvent {
-    type: "progress"
-    step: number
-    total_steps: number
-    preview?: string // base64
-}
-
-export interface SSECompletedEvent {
-    type: "completed"
-    result: {
-        image_id: string
-        image_url: string
-        thumbnail_url: string
-    }
-}
-
-export interface SSEFailedEvent {
-    type: "failed"
-    error: string
-}
-
-export interface SSEGalleryEvent {
-    type: "new_image"
-    image: ImageInfo
-}
-
-export type SSEEvent =
-    | SSEStatusEvent
-    | SSEProgressEvent
-    | SSECompletedEvent
-    | SSEFailedEvent
-    | SSEGalleryEvent

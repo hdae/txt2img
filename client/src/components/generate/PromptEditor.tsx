@@ -6,6 +6,7 @@ import { EditorView } from "@codemirror/view"
 import { Box, Text } from "@radix-ui/themes"
 import CodeMirror from "@uiw/react-codemirror"
 
+import { getPromptEditorExtensions } from "@/lib/codemirror-keymap"
 import { radixDarkTheme } from "@/lib/codemirror-theme"
 import { useGenerateStore } from "@/stores/generateStore"
 
@@ -24,11 +25,15 @@ export const PromptEditor = () => {
                 height="120px"
                 placeholder="プロンプトを入力..."
                 theme={radixDarkTheme}
-                extensions={[EditorView.lineWrapping]}
+                extensions={[
+                    EditorView.lineWrapping,
+                    ...getPromptEditorExtensions(),
+                ]}
                 basicSetup={{
                     lineNumbers: false,
                     foldGutter: false,
                     highlightActiveLine: false,
+                    history: false,  // Disable default history, we use custom
                 }}
                 style={{
                     fontSize: 14,

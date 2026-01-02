@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query"
 import { getServerInfo } from "@/api/client"
 import type { ServerInfo } from "@/api/types"
 
-export const serverInfoQueryKey = ["serverInfo"] as const
+const serverInfoQueryKey = ["serverInfo"] as const
 
 export function useServerInfo() {
     return useQuery<ServerInfo>({

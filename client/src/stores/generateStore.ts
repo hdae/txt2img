@@ -11,7 +11,7 @@ import type { LoraRequest, ParameterSchema } from "@/api/types"
 // Types
 // =============================================================================
 
-export interface GenerateFormState {
+interface GenerateFormState {
     prompt: string
     negativePrompt: string
     width: number
@@ -21,9 +21,9 @@ export interface GenerateFormState {
     loras: LoraRequest[]
 }
 
-export type JobStatus = "idle" | "queued" | "processing" | "completed" | "failed"
+type JobStatus = "idle" | "queued" | "processing" | "completed" | "failed"
 
-export interface JobProgress {
+interface JobProgress {
     jobId: string | null
     status: JobStatus
     queuePosition: number | null
