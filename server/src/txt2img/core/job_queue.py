@@ -55,6 +55,7 @@ class Job:
     progress: float = 0.0
     current_step: int = 0
     total_steps: int = 0
+    queue_position: int = 0  # Position in queue (0 = next to run)
     preview_base64: str | None = None
     result: JobResult | None = None
     error: str | None = None
@@ -70,6 +71,7 @@ class Job:
             "progress": self.progress,
             "current_step": self.current_step,
             "total_steps": self.total_steps,
+            "queue_position": self.queue_position,
             "result": {
                 "image_id": self.result.image_id,
                 "image_url": self.result.image_url,
@@ -89,6 +91,7 @@ class JobQueue:
         self._queue: asyncio.Queue[Job] = asyncio.Queue()
         self._jobs: dict[str, Job] = {}
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
+        self._gallery_subscribers: list[asyncio.Queue] = []
         self._lock = asyncio.Lock()
 
     def create_job(self, params: GenerationParams) -> Job:
@@ -101,10 +104,12 @@ class JobQueue:
             Created job
         """
         job_id = uuid.uuid4().hex[:12]
-        job = Job(id=job_id, params=params, total_steps=params.steps)
+        # Queue position is current queue size (0-indexed)
+        queue_position = self._queue.qsize()
+        job = Job(id=job_id, params=params, queue_position=queue_position)
         self._jobs[job_id] = job
         self._queue.put_nowait(job)
-        logger.info(f"Created job {job_id}")
+        logger.info(f"Created job {job_id} at queue position {queue_position}")
         return job
 
     def get_job(self, job_id: str) -> Job | None:
@@ -156,6 +161,27 @@ class JobQueue:
                 if not self._subscribers[job_id]:
                     del self._subscribers[job_id]
 
+    async def subscribe_gallery(self) -> asyncio.Queue:
+        """Subscribe to gallery updates (new images).
+
+        Returns:
+            Queue that will receive new image notifications
+        """
+        async with self._lock:
+            queue: asyncio.Queue = asyncio.Queue()
+            self._gallery_subscribers.append(queue)
+            logger.debug(f"Gallery subscriber added, total: {len(self._gallery_subscribers)}")
+            return queue
+
+    async def unsubscribe_gallery(self, queue: asyncio.Queue) -> None:
+        """Unsubscribe from gallery updates."""
+        async with self._lock:
+            try:
+                self._gallery_subscribers.remove(queue)
+                logger.debug(f"Gallery subscriber removed, total: {len(self._gallery_subscribers)}")
+            except ValueError:
+                pass
+
     async def notify_subscribers(self, job_id: str, event: dict[str, Any]) -> None:
         """Send event to all subscribers of a job."""
         async with self._lock:
@@ -165,6 +191,35 @@ class JobQueue:
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
                     pass
+
+    async def notify_gallery_subscribers(self, event: dict[str, Any]) -> None:
+        """Send event to all gallery subscribers."""
+        async with self._lock:
+            for queue in self._gallery_subscribers:
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    pass
+
+    async def notify_queue_position_update(self) -> None:
+        """Notify all queued jobs of their updated position."""
+        # Get all queued jobs and update their positions
+        queued_jobs = [
+            job for job in self._jobs.values()
+            if job.status == JobStatus.QUEUED
+        ]
+        # Sort by created_at to maintain order
+        queued_jobs.sort(key=lambda j: j.created_at)
+
+        for i, job in enumerate(queued_jobs):
+            job.queue_position = i
+            await self.notify_subscribers(
+                job.id,
+                {
+                    "type": "queue_update",
+                    "queue_position": i,
+                },
+            )
 
     async def update_job_progress(
         self,
@@ -198,13 +253,18 @@ class JobQueue:
             },
         )
 
-    async def mark_job_running(self, job_id: str) -> None:
-        """Mark job as running."""
+    async def mark_job_running(self, job_id: str, total_steps: int = 0) -> None:
+        """Mark job as running and update queue positions for waiting jobs."""
         job = self._jobs.get(job_id)
         if job:
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now()
+            job.queue_position = -1  # No longer in queue
+            if total_steps > 0:
+                job.total_steps = total_steps
             await self.notify_subscribers(job_id, {"type": "started"})
+            # Update queue positions for remaining jobs
+            await self.notify_queue_position_update()
 
     async def mark_job_completed(self, job_id: str, result: JobResult) -> None:
         """Mark job as completed with result."""
@@ -214,16 +274,31 @@ class JobQueue:
             job.result = result
             job.progress = 1.0
             job.completed_at = datetime.now()
+
+            result_data = {
+                "image_id": result.image_id,
+                "image_url": result.image_url,
+                "thumbnail_url": result.thumbnail_url,
+            }
+
+            # Notify job subscribers
             await self.notify_subscribers(
                 job_id,
                 {
                     "type": "completed",
-                    "result": {
-                        "image_id": result.image_id,
-                        "image_url": result.image_url,
-                        "thumbnail_url": result.thumbnail_url,
-                    },
+                    "result": result_data,
                 },
+            )
+
+            # Notify gallery subscribers about new image
+            await self.notify_gallery_subscribers(
+                {
+                    "type": "new_image",
+                    "image_id": result.image_id,
+                    "image_url": result.image_url,
+                    "thumbnail_url": result.thumbnail_url,
+                    "metadata": result.metadata,
+                }
             )
 
     async def mark_job_failed(self, job_id: str, error: str) -> None:
@@ -234,6 +309,8 @@ class JobQueue:
             job.error = error
             job.completed_at = datetime.now()
             await self.notify_subscribers(job_id, {"type": "failed", "error": error})
+            # Update queue positions for remaining jobs
+            await self.notify_queue_position_update()
 
 
 # Global job queue instance

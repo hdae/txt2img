@@ -1,4 +1,4 @@
-"""SSE (Server-Sent Events) endpoint."""
+"""SSE (Server-Sent Events) endpoints."""
 
 import asyncio
 import json
@@ -57,14 +57,14 @@ async def job_event_generator(request: Request, job_id: str):
     event_queue = await job_queue.subscribe(job_id)
 
     try:
-        # Send initial status
+        # Send initial status with queue position
         yield {
             "event": "status",
             "data": json.dumps(
                 {
                     "status": job.status.value,
                     "progress": job.progress,
-                    "queue_position": job_queue.queue_size,
+                    "queue_position": job.queue_position,
                 }
             ),
         }
@@ -112,5 +112,65 @@ async def sse_endpoint(request: Request, job_id: str) -> EventSourceResponse:
     """
     return EventSourceResponse(
         job_event_generator(request, job_id),
+        media_type="text/event-stream",
+    )
+
+
+async def gallery_event_generator(request: Request):
+    """Generate SSE events for gallery updates (new images).
+
+    Args:
+        request: Starlette request
+
+    Yields:
+        SSE events for new images
+    """
+    event_queue = await job_queue.subscribe_gallery()
+
+    try:
+        # Send initial connected event
+        yield {
+            "event": "connected",
+            "data": json.dumps({"status": "connected"}),
+        }
+
+        while True:
+            # Check if client disconnected
+            if await request.is_disconnected():
+                break
+
+            try:
+                # Wait for event with timeout
+                event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+
+                event_type = event.get("type", "update")
+
+                yield {
+                    "event": event_type,
+                    "data": json.dumps(event),
+                }
+
+            except TimeoutError:
+                # Send keepalive
+                yield {
+                    "event": "ping",
+                    "data": json.dumps({"status": "alive"}),
+                }
+
+    finally:
+        await job_queue.unsubscribe_gallery(event_queue)
+
+
+async def gallery_sse_endpoint(request: Request) -> EventSourceResponse:
+    """SSE endpoint for gallery updates.
+
+    Args:
+        request: Starlette request
+
+    Returns:
+        EventSourceResponse
+    """
+    return EventSourceResponse(
+        gallery_event_generator(request),
         media_type="text/event-stream",
     )

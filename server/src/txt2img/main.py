@@ -77,8 +77,12 @@ async def job_worker():
             job = await job_queue.get_next_job()
             logger.info(f"Processing job {job.id}")
 
-            # Mark as running
-            await job_queue.mark_job_running(job.id)
+            # Get total steps from pipeline schema
+            schema = get_pipeline().get_parameter_schema()
+            total_steps = schema.get("fixed", {}).get("steps", 20)
+
+            # Mark as running with total steps
+            await job_queue.mark_job_running(job.id, total_steps=total_steps)
 
             try:
                 # Progress callback for SSE updates
@@ -101,8 +105,8 @@ async def job_worker():
 
                 result = JobResult(
                     image_id=saved.id,
-                    image_url=f"/api/images/{saved.id}",
-                    thumbnail_url=f"/api/images/{saved.id}?thumbnail=true",
+                    image_url=f"/api/images/{saved.id}.{saved.format.value}",
+                    thumbnail_url=f"/api/thumbs/{saved.id}.webp",
                     metadata=saved.metadata.to_dict(),
                 )
                 await job_queue.mark_job_completed(job.id, result)

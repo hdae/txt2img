@@ -15,7 +15,7 @@ from txt2img.api.schemas import (
     LoraInfo,
     ServerInfo,
 )
-from txt2img.api.sse import sse_endpoint
+from txt2img.api.sse import gallery_sse_endpoint, sse_endpoint
 from txt2img.config import get_settings
 from txt2img.core.image_processor import list_images
 from txt2img.core.job_queue import GenerationParams, job_queue
@@ -70,6 +70,12 @@ async def generate_image(request: GenerateRequest) -> GenerateResponse:
 async def get_job_sse(request: Request, job_id: str):
     """SSE endpoint for job progress updates."""
     return await sse_endpoint(request, job_id)
+
+
+@router.get("/sse/gallery")
+async def get_gallery_sse(request: Request):
+    """SSE endpoint for gallery updates (new images)."""
+    return await gallery_sse_endpoint(request)
 
 
 @router.get("/images", response_model=ImageListResponse)
