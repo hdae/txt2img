@@ -11,7 +11,7 @@ import type {
 
 const API_BASE = "/api"
 
-class APIError extends Error {
+export class APIError extends Error {
     public status: number
     public statusText: string
     public detail?: string
@@ -91,5 +91,3 @@ export function getImageUrl(imageId: string, ext: "png" | "webp" = "webp"): stri
 export function getThumbnailUrl(imageId: string): string {
     return `${API_BASE}/thumbs/${imageId}.webp`
 }
-
-export { APIError }
