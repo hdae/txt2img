@@ -6,7 +6,27 @@ export interface SSEOptions {
     onMessage: (event: string, data: unknown) => void
     onError?: (error: Event) => void
     onOpen?: () => void
+    eventTypes?: string[]
 }
+
+// Default event types for job progress
+const DEFAULT_JOB_EVENT_TYPES = [
+    "status",
+    "started",
+    "queue_update",
+    "progress",
+    "completed",
+    "failed",
+    "error",
+    "ping",
+]
+
+// Default event types for gallery
+const DEFAULT_GALLERY_EVENT_TYPES = [
+    "connected",
+    "new_image",
+    "ping",
+]
 
 /**
  * Create an SSE connection and return cleanup function
@@ -26,18 +46,7 @@ export function createSSEConnection(
     }
 
     // Handle named events
-    const eventTypes = [
-        "status",
-        "started",
-        "queue_update",
-        "progress",
-        "completed",
-        "failed",
-        "error",
-        "ping",
-        "connected",
-        "new_image",
-    ]
+    const eventTypes = options.eventTypes ?? DEFAULT_JOB_EVENT_TYPES
 
     for (const eventType of eventTypes) {
         eventSource.addEventListener(eventType, (event) => {
@@ -71,14 +80,22 @@ export function createSSEConnection(
  */
 export function connectToJobSSE(
     jobId: string,
-    options: SSEOptions
+    options: Omit<SSEOptions, "eventTypes">
 ): () => void {
-    return createSSEConnection(`/api/sse/${jobId}`, options)
+    return createSSEConnection(`/api/sse/${jobId}`, {
+        ...options,
+        eventTypes: DEFAULT_JOB_EVENT_TYPES,
+    })
 }
 
 /**
  * Connect to gallery SSE endpoint
  */
-export function connectToGallerySSE(options: SSEOptions): () => void {
-    return createSSEConnection("/api/sse/gallery", options)
+export function connectToGallerySSE(
+    options: Omit<SSEOptions, "eventTypes">
+): () => void {
+    return createSSEConnection("/api/sse/gallery", {
+        ...options,
+        eventTypes: DEFAULT_GALLERY_EVENT_TYPES,
+    })
 }

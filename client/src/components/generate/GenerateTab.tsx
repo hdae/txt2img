@@ -108,6 +108,23 @@ export const GenerateTab = () => {
                         </Text>
                     </Box>
                 )}
+
+                {/* Placeholder for idle state */}
+                {job.status === "idle" && (
+                    <Box
+                        p="6"
+                        style={{
+                            backgroundColor: "var(--gray-2)",
+                            borderRadius: "var(--radius-3)",
+                            border: "1px dashed var(--gray-6)",
+                            textAlign: "center",
+                        }}
+                    >
+                        <Text color="gray" size="2">
+                            生成された画像はここに表示されます
+                        </Text>
+                    </Box>
+                )}
             </Flex>
         </Grid>
     )

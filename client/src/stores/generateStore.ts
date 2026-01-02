@@ -99,136 +99,144 @@ const defaultJob: JobProgress = {
 // Store
 // =============================================================================
 
+import { persist } from "zustand/middleware"
+
 export const useGenerateStore = create<GenerateStore>()(
-    immer((set) => ({
-        form: defaultForm,
-        job: defaultJob,
+    persist(
+        immer((set) => ({
+            form: defaultForm,
+            job: defaultJob,
 
-        // Form actions
-        setPrompt: (prompt) =>
-            set((state) => {
-                state.form.prompt = prompt
-            }),
+            // Form actions
+            setPrompt: (prompt) =>
+                set((state) => {
+                    state.form.prompt = prompt
+                }),
 
-        setNegativePrompt: (negativePrompt) =>
-            set((state) => {
-                state.form.negativePrompt = negativePrompt
-            }),
+            setNegativePrompt: (negativePrompt) =>
+                set((state) => {
+                    state.form.negativePrompt = negativePrompt
+                }),
 
-        setWidth: (width) =>
-            set((state) => {
-                state.form.width = width
-            }),
+            setWidth: (width) =>
+                set((state) => {
+                    state.form.width = width
+                }),
 
-        setHeight: (height) =>
-            set((state) => {
-                state.form.height = height
-            }),
+            setHeight: (height) =>
+                set((state) => {
+                    state.form.height = height
+                }),
 
-        setSize: (width, height) =>
-            set((state) => {
-                state.form.width = width
-                state.form.height = height
-            }),
+            setSize: (width, height) =>
+                set((state) => {
+                    state.form.width = width
+                    state.form.height = height
+                }),
 
-        setSeed: (seed) =>
-            set((state) => {
-                state.form.seed = seed
-            }),
+            setSeed: (seed) =>
+                set((state) => {
+                    state.form.seed = seed
+                }),
 
-        toggleSeedLocked: () =>
-            set((state) => {
-                state.form.seedLocked = !state.form.seedLocked
-            }),
+            toggleSeedLocked: () =>
+                set((state) => {
+                    state.form.seedLocked = !state.form.seedLocked
+                }),
 
-        addLora: (lora) =>
-            set((state) => {
-                const exists = state.form.loras.find((l) => l.id === lora.id)
-                if (!exists) {
-                    state.form.loras.push(lora)
-                }
-            }),
+            addLora: (lora) =>
+                set((state) => {
+                    const exists = state.form.loras.find((l) => l.id === lora.id)
+                    if (!exists) {
+                        state.form.loras.push(lora)
+                    }
+                }),
 
-        removeLora: (loraId) =>
-            set((state) => {
-                state.form.loras = state.form.loras.filter((l) => l.id !== loraId)
-            }),
+            removeLora: (loraId) =>
+                set((state) => {
+                    state.form.loras = state.form.loras.filter((l) => l.id !== loraId)
+                }),
 
-        updateLoraWeight: (loraId, weight) =>
-            set((state) => {
-                const lora = state.form.loras.find((l) => l.id === loraId)
-                if (lora) {
-                    lora.weight = weight
-                }
-            }),
+            updateLoraWeight: (loraId, weight) =>
+                set((state) => {
+                    const lora = state.form.loras.find((l) => l.id === loraId)
+                    if (lora) {
+                        lora.weight = weight
+                    }
+                }),
 
-        updateLoraTriggerWeight: (loraId, triggerWeight) =>
-            set((state) => {
-                const lora = state.form.loras.find((l) => l.id === loraId)
-                if (lora) {
-                    lora.trigger_weight = triggerWeight
-                }
-            }),
+            updateLoraTriggerWeight: (loraId, triggerWeight) =>
+                set((state) => {
+                    const lora = state.form.loras.find((l) => l.id === loraId)
+                    if (lora) {
+                        lora.trigger_weight = triggerWeight
+                    }
+                }),
 
-        clearLoras: () =>
-            set((state) => {
-                state.form.loras = []
-            }),
+            clearLoras: () =>
+                set((state) => {
+                    state.form.loras = []
+                }),
 
-        resetForm: (schema) =>
-            set((state) => {
-                state.form = {
-                    ...defaultForm,
-                    width: (schema?.properties.width?.default as number) ?? 1024,
-                    height: (schema?.properties.height?.default as number) ?? 1024,
-                }
-            }),
+            resetForm: (schema) =>
+                set((state) => {
+                    state.form = {
+                        ...defaultForm,
+                        width: (schema?.properties.width?.default as number) ?? 1024,
+                        height: (schema?.properties.height?.default as number) ?? 1024,
+                    }
+                }),
 
-        // Job actions
-        startJob: (jobId) =>
-            set((state) => {
-                state.job = {
-                    ...defaultJob,
-                    jobId,
-                    status: "queued",
-                }
-            }),
+            // Job actions
+            startJob: (jobId) =>
+                set((state) => {
+                    state.job = {
+                        ...defaultJob,
+                        jobId,
+                        status: "queued",
+                    }
+                }),
 
-        updateJobStatus: (status) =>
-            set((state) => {
-                state.job.status = status
-            }),
+            updateJobStatus: (status) =>
+                set((state) => {
+                    state.job.status = status
+                }),
 
-        updateQueuePosition: (position) =>
-            set((state) => {
-                state.job.queuePosition = position
-            }),
+            updateQueuePosition: (position) =>
+                set((state) => {
+                    state.job.queuePosition = position
+                }),
 
-        updateProgress: (step, totalSteps, preview) =>
-            set((state) => {
-                state.job.status = "processing"
-                state.job.step = step
-                state.job.totalSteps = totalSteps
-                if (preview) {
-                    state.job.preview = preview
-                }
-            }),
+            updateProgress: (step, totalSteps, preview) =>
+                set((state) => {
+                    state.job.status = "processing"
+                    state.job.step = step
+                    state.job.totalSteps = totalSteps
+                    if (preview) {
+                        state.job.preview = preview
+                    }
+                }),
 
-        completeJob: (result) =>
-            set((state) => {
-                state.job.status = "completed"
-                state.job.result = result
-            }),
+            completeJob: (result) =>
+                set((state) => {
+                    state.job.status = "completed"
+                    state.job.result = result
+                }),
 
-        failJob: (error) =>
-            set((state) => {
-                state.job.status = "failed"
-                state.job.error = error
-            }),
+            failJob: (error) =>
+                set((state) => {
+                    state.job.status = "failed"
+                    state.job.error = error
+                }),
 
-        resetJob: () =>
-            set((state) => {
-                state.job = defaultJob
-            }),
-    }))
+            resetJob: () =>
+                set((state) => {
+                    state.job = defaultJob
+                }),
+        })),
+        {
+            name: "txt2img-generate-form",
+            partialize: (state) => ({ form: state.form }),
+        }
+    )
 )

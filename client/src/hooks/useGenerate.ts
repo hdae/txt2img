@@ -130,6 +130,13 @@ export function useGenerate() {
                         case "ping":
                             // Keepalive, ignore
                             break
+
+                        case "error":
+                            // SSE error event from server
+                            failJob(payload.error as string || "Unknown server error")
+                            toast.error(`サーバーエラー: ${payload.error || "不明なエラー"}`)
+                            cleanupRef.current?.()
+                            break
                     }
                 },
                 onError: () => {
