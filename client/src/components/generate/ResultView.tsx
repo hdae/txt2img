@@ -1,91 +1,78 @@
 /**
- * ResultView - Display generated image result
+ * ResultView - Display generated image (simplified)
  */
 
-import { Box, Button, Card, Flex, Text } from "@radix-ui/themes"
-import { Check, Copy, Download } from "lucide-react"
-import { useState } from "react"
+import { Box, Button, Flex } from "@radix-ui/themes"
+import { Download, ExternalLink } from "lucide-react"
 import toast from "react-hot-toast"
 
 import { getImageUrl } from "@/api/client"
-import { useGenerateStore } from "@/stores/generateStore"
 
-export const ResultView = () => {
-    const job = useGenerateStore((state) => state.job)
-    const form = useGenerateStore((state) => state.form)
-    const [copied, setCopied] = useState(false)
+interface ResultViewProps {
+    result: {
+        imageId: string
+        imageUrl: string
+        thumbnailUrl: string
+    }
+    outputFormat: "png" | "webp"
+}
 
-    if (!job.result) return null
+export const ResultView = ({ result, outputFormat }: ResultViewProps) => {
+    const fullImageUrl = getImageUrl(result.imageId, outputFormat)
 
-    const handleDownload = async (format: "png" | "webp") => {
-        const url = getImageUrl(job.result!.imageId, format)
-        const response = await fetch(url)
+    const handleDownload = async () => {
+        const response = await fetch(fullImageUrl)
         const blob = await response.blob()
         const blobUrl = URL.createObjectURL(blob)
 
         const a = document.createElement("a")
         a.href = blobUrl
-        a.download = `${job.result!.imageId}.${format}`
+        a.download = `${result.imageId}.${outputFormat}`
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
         URL.revokeObjectURL(blobUrl)
 
-        toast.success(`${format.toUpperCase()}でダウンロードしました`)
+        toast.success("ダウンロードしました")
     }
 
-    const handleCopyPrompt = async () => {
-        await navigator.clipboard.writeText(form.prompt)
-        setCopied(true)
-        toast.success("プロンプトをコピーしました")
-        setTimeout(() => setCopied(false), 2000)
+    const handleOpenInNewTab = () => {
+        window.open(fullImageUrl, "_blank")
     }
 
     return (
-        <Card size="2">
-            <Flex direction="column" gap="3">
-                {/* Image */}
-                <Box
-                    style={{
-                        borderRadius: "var(--radius-2)",
-                        overflow: "hidden",
-                    }}
-                >
-                    <img
-                        src={job.result.imageUrl}
-                        alt="Generated"
-                        style={{
-                            width: "100%",
-                            height: "auto",
-                            display: "block",
-                        }}
-                    />
-                </Box>
-
-                {/* Actions */}
-                <Flex gap="2" wrap="wrap">
-                    <Button variant="soft" size="2" onClick={() => handleDownload("png")}>
-                        <Download size={16} />
-                        PNG
-                    </Button>
-                    <Button variant="soft" size="2" onClick={() => handleDownload("webp")}>
-                        <Download size={16} />
-                        WebP
-                    </Button>
-                    <Button variant="ghost" size="2" onClick={handleCopyPrompt}>
-                        {copied ? <Check size={16} /> : <Copy size={16} />}
-                        プロンプト
-                    </Button>
-                </Flex>
-
-                {/* Metadata */}
-                <Box>
-                    <Text size="1" color="gray">
-                        サイズ: {form.width}×{form.height}
-                        {form.seed !== null && ` | シード: ${form.seed}`}
-                    </Text>
-                </Box>
+        <Box>
+            {/* Actions (above image) */}
+            <Flex gap="2" mb="3">
+                <Button variant="soft" size="2" onClick={handleDownload} style={{ flex: 1 }}>
+                    <Download size={16} />
+                    ダウンロード
+                </Button>
+                <Button variant="soft" size="2" onClick={handleOpenInNewTab} style={{ flex: 1 }}>
+                    <ExternalLink size={16} />
+                    新しいタブで開く
+                </Button>
             </Flex>
-        </Card>
+
+            {/* Image - clickable to open in new tab */}
+            <Box
+                style={{
+                    borderRadius: "var(--radius-3)",
+                    overflow: "hidden",
+                    cursor: "pointer",
+                }}
+                onClick={handleOpenInNewTab}
+            >
+                <img
+                    src={result.imageUrl}
+                    alt="Generated"
+                    style={{
+                        width: "100%",
+                        height: "auto",
+                        display: "block",
+                    }}
+                />
+            </Box>
+        </Box>
     )
 }

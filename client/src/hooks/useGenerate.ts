@@ -10,6 +10,13 @@ import { connectToJobSSE } from "@/api/sse"
 import type { GenerateRequest } from "@/api/types"
 import { useGenerateStore } from "@/stores/generateStore"
 
+/**
+ * Generate a random seed
+ */
+function generateRandomSeed(): number {
+    return Math.floor(Math.random() * 2147483647)
+}
+
 export function useGenerate() {
     const {
         form,
@@ -21,6 +28,7 @@ export function useGenerate() {
         completeJob,
         failJob,
         resetJob,
+        setSeed,
     } = useGenerateStore()
 
     const cleanupRef = useRef<(() => void) | null>(null)
@@ -36,13 +44,20 @@ export function useGenerate() {
         // Cleanup previous SSE connection
         cleanupRef.current?.()
 
+        // Generate seed if not locked
+        let seedToUse = form.seed
+        if (!form.seedLocked) {
+            seedToUse = generateRandomSeed()
+            setSeed(seedToUse) // Update store with generated seed
+        }
+
         // Build request
         const request: GenerateRequest = {
             prompt: form.prompt,
             negative_prompt: form.negativePrompt || undefined,
             width: form.width,
             height: form.height,
-            seed: form.seed ?? undefined,
+            seed: seedToUse,
             loras: form.loras.length > 0 ? form.loras : undefined,
         }
 
@@ -53,22 +68,38 @@ export function useGenerate() {
 
             // Connect to SSE
             cleanupRef.current = connectToJobSSE(response.job_id, {
-                onMessage: (event, data) => {
+                onMessage: (event: string, data: unknown) => {
                     const payload = data as Record<string, unknown>
 
                     switch (event) {
                         case "status":
+                            // Initial status event
                             if (payload.status) {
-                                updateJobStatus(payload.status as "queued" | "processing")
+                                // Map 'running' to 'processing' for consistency
+                                const status = payload.status === "running" ? "processing" : payload.status
+                                updateJobStatus(status as "queued" | "processing")
                             }
                             if (typeof payload.queue_position === "number") {
                                 updateQueuePosition(payload.queue_position)
                             }
                             break
 
+                        case "started":
+                            // Job started processing
+                            updateJobStatus("processing")
+                            break
+
+                        case "queue_update":
+                            // Queue position changed
+                            if (typeof payload.queue_position === "number") {
+                                updateQueuePosition(payload.queue_position)
+                            }
+                            break
+
                         case "progress":
+                            // Server sends 'current_step', not 'step'
                             updateProgress(
-                                payload.step as number,
+                                payload.current_step as number,
                                 payload.total_steps as number,
                                 payload.preview as string | undefined
                             )
@@ -95,6 +126,10 @@ export function useGenerate() {
                             toast.error(`生成失敗: ${payload.error}`)
                             cleanupRef.current?.()
                             break
+
+                        case "ping":
+                            // Keepalive, ignore
+                            break
                     }
                 },
                 onError: () => {
@@ -115,6 +150,7 @@ export function useGenerate() {
         updateProgress,
         completeJob,
         failJob,
+        setSeed,
     ])
 
     const cancel = useCallback(() => {

@@ -17,6 +17,7 @@ export interface GenerateFormState {
     width: number
     height: number
     seed: number | null
+    seedLocked: boolean
     loras: LoraRequest[]
 }
 
@@ -51,6 +52,7 @@ interface GenerateStore {
     setHeight: (height: number) => void
     setSize: (width: number, height: number) => void
     setSeed: (seed: number | null) => void
+    toggleSeedLocked: () => void
     addLora: (lora: LoraRequest) => void
     removeLora: (loraId: string) => void
     updateLoraWeight: (loraId: string, weight: number) => void
@@ -78,6 +80,7 @@ const defaultForm: GenerateFormState = {
     width: 1024,
     height: 1024,
     seed: null,
+    seedLocked: false,
     loras: [],
 }
 
@@ -131,6 +134,11 @@ export const useGenerateStore = create<GenerateStore>()(
         setSeed: (seed) =>
             set((state) => {
                 state.form.seed = seed
+            }),
+
+        toggleSeedLocked: () =>
+            set((state) => {
+                state.form.seedLocked = !state.form.seedLocked
             }),
 
         addLora: (lora) =>

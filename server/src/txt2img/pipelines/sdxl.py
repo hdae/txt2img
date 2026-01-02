@@ -430,20 +430,43 @@ class SDXLPipeline(BasePipeline):
 
         # Run pipeline in thread pool to avoid blocking event loop
         import asyncio
+        from diffusers.callbacks import PipelineCallback
+
+        # Get event loop reference for thread-safe callback
+        loop = asyncio.get_running_loop()
+
+        # Create callback wrapper for progress updates
+        step_callback = None
+        if progress_callback:
+            class ProgressCallback(PipelineCallback):
+                tensor_inputs = []  # No tensors needed
+
+                def callback_fn(self, pipeline, step, timestep, callback_kwargs):
+                    # Call the async callback from sync context using thread-safe method
+                    asyncio.run_coroutine_threadsafe(
+                        progress_callback(step + 1, None),  # step is 0-indexed
+                        loop
+                    )
+                    return callback_kwargs
+
+            step_callback = ProgressCallback()
 
         def _run_pipeline():
             with torch.inference_mode():
-                return self.pipe(
-                    prompt_embeds=prompt_embeds,
-                    negative_prompt_embeds=negative_prompt_embeds,
-                    pooled_prompt_embeds=pooled_prompt_embeds,
-                    negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
-                    width=params.width,
-                    height=params.height,
-                    num_inference_steps=SDXL_FIXED_STEPS,
-                    guidance_scale=SDXL_FIXED_CFG_SCALE,
-                    generator=generator,
-                )
+                kwargs = {
+                    "prompt_embeds": prompt_embeds,
+                    "negative_prompt_embeds": negative_prompt_embeds,
+                    "pooled_prompt_embeds": pooled_prompt_embeds,
+                    "negative_pooled_prompt_embeds": negative_pooled_prompt_embeds,
+                    "width": params.width,
+                    "height": params.height,
+                    "num_inference_steps": SDXL_FIXED_STEPS,
+                    "guidance_scale": SDXL_FIXED_CFG_SCALE,
+                    "generator": generator,
+                }
+                if step_callback:
+                    kwargs["callback_on_step_end"] = step_callback
+                return self.pipe(**kwargs)
 
         logger.info("Calling pipeline...")
         result = await asyncio.to_thread(_run_pipeline)

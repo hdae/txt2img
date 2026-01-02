@@ -154,17 +154,39 @@ class ChromaPipelineImpl(BasePipeline):
 
         # Run pipeline
         import asyncio
+        from diffusers.callbacks import PipelineCallback
+
+        # Get event loop reference for thread-safe callback
+        loop = asyncio.get_running_loop()
+
+        # Create callback wrapper for progress updates
+        step_callback = None
+        if progress_callback:
+            class ProgressCallback(PipelineCallback):
+                tensor_inputs = []  # No tensors needed
+
+                def callback_fn(self, pipeline, step, timestep, callback_kwargs):
+                    asyncio.run_coroutine_threadsafe(
+                        progress_callback(step + 1, None),
+                        loop
+                    )
+                    return callback_kwargs
+
+            step_callback = ProgressCallback()
 
         def _run_pipeline():
             with torch.inference_mode():
-                return self.pipe(
-                    prompt=params.prompt,
-                    height=params.height,
-                    width=params.width,
-                    num_inference_steps=CHROMA_FIXED_STEPS,
-                    guidance_scale=CHROMA_FIXED_CFG_SCALE,
-                    generator=generator,
-                )
+                kwargs = {
+                    "prompt": params.prompt,
+                    "height": params.height,
+                    "width": params.width,
+                    "num_inference_steps": CHROMA_FIXED_STEPS,
+                    "guidance_scale": CHROMA_FIXED_CFG_SCALE,
+                    "generator": generator,
+                }
+                if step_callback:
+                    kwargs["callback_on_step_end"] = step_callback
+                return self.pipe(**kwargs)
 
         logger.info("Calling Chroma pipeline...")
         result = await asyncio.to_thread(_run_pipeline)

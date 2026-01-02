@@ -56,6 +56,7 @@ export interface LoraInfo {
 export interface ServerInfo {
     model_name: string
     training_resolution: string
+    output_format: "png" | "webp"
     available_loras: LoraInfo[]
     parameter_schema: ParameterSchema
 }

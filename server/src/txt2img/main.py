@@ -97,7 +97,7 @@ async def job_worker():
                 # Generate image
                 saved = await get_pipeline().generate(
                     job.params,
-                    progress_callback=lambda s, p: asyncio.create_task(progress_callback(s, p)),
+                    progress_callback=progress_callback,
                 )
 
                 # Mark as completed

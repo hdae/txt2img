@@ -1,9 +1,22 @@
 /**
- * LoraSelector - LoRA selection and weight adjustment
+ * LoraSelector - LoRA selection with dialog and RadioCards
  */
 
-import { Badge, Box, Card, Flex, IconButton, Select, Slider, Text } from "@radix-ui/themes"
-import { X } from "lucide-react"
+import { useState } from "react"
+
+import {
+    Badge,
+    Box,
+    Button,
+    Card,
+    Dialog,
+    Flex,
+    IconButton,
+    RadioCards,
+    Slider,
+    Text,
+} from "@radix-ui/themes"
+import { Plus, X } from "lucide-react"
 
 import type { LoraInfo } from "@/api/types"
 import { useGenerateStore } from "@/stores/generateStore"
@@ -19,18 +32,24 @@ export const LoraSelector = ({ loras }: LoraSelectorProps) => {
     const updateLoraWeight = useGenerateStore((state) => state.updateLoraWeight)
     const updateLoraTriggerWeight = useGenerateStore((state) => state.updateLoraTriggerWeight)
 
+    const [dialogOpen, setDialogOpen] = useState(false)
+    const [selectedLoraId, setSelectedLoraId] = useState<string>("")
+
     const availableLoras = loras.filter(
         (lora) => !selectedLoras.find((selected) => selected.id === lora.id)
     )
 
-    const handleAddLora = (loraId: string) => {
-        const lora = loras.find((l) => l.id === loraId)
+    const handleAddLora = () => {
+        if (!selectedLoraId) return
+        const lora = loras.find((l) => l.id === selectedLoraId)
         if (lora) {
             addLora({
                 id: lora.id,
                 weight: lora.weight,
                 trigger_weight: lora.trigger_weight,
             })
+            setSelectedLoraId("")
+            setDialogOpen(false)
         }
     }
 
@@ -41,16 +60,62 @@ export const LoraSelector = ({ loras }: LoraSelectorProps) => {
                     LoRA
                 </Text>
                 {availableLoras.length > 0 && (
-                    <Select.Root onValueChange={handleAddLora} size="1">
-                        <Select.Trigger placeholder="LoRAを追加..." variant="soft" />
-                        <Select.Content>
-                            {availableLoras.map((lora) => (
-                                <Select.Item key={lora.id} value={lora.id}>
-                                    {lora.name}
-                                </Select.Item>
-                            ))}
-                        </Select.Content>
-                    </Select.Root>
+                    <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
+                        <Dialog.Trigger>
+                            <Button variant="soft" size="1">
+                                <Plus size={14} />
+                                追加
+                            </Button>
+                        </Dialog.Trigger>
+                        <Dialog.Content maxWidth="500px">
+                            <Dialog.Title>LoRAを追加</Dialog.Title>
+                            <Dialog.Description size="2" mb="4">
+                                適用するLoRAを選択してください
+                            </Dialog.Description>
+
+                            <RadioCards.Root
+                                value={selectedLoraId}
+                                onValueChange={setSelectedLoraId}
+                                columns="1"
+                            >
+                                {availableLoras.map((lora) => (
+                                    <RadioCards.Item key={lora.id} value={lora.id}>
+                                        <Flex direction="column" width="100%" gap="1">
+                                            <Flex justify="between" align="center">
+                                                <Text weight="bold">{lora.name}</Text>
+                                                <Text size="1" color="gray">{lora.id}</Text>
+                                            </Flex>
+                                            {lora.trigger_words.length > 0 && (
+                                                <Flex gap="1" wrap="wrap">
+                                                    {lora.trigger_words.slice(0, 3).map((word) => (
+                                                        <Badge key={word} size="1" variant="soft">
+                                                            {word}
+                                                        </Badge>
+                                                    ))}
+                                                    {lora.trigger_words.length > 3 && (
+                                                        <Badge size="1" variant="soft" color="gray">
+                                                            +{lora.trigger_words.length - 3}
+                                                        </Badge>
+                                                    )}
+                                                </Flex>
+                                            )}
+                                        </Flex>
+                                    </RadioCards.Item>
+                                ))}
+                            </RadioCards.Root>
+
+                            <Flex gap="3" mt="4" justify="end">
+                                <Dialog.Close>
+                                    <Button variant="soft" color="gray">
+                                        キャンセル
+                                    </Button>
+                                </Dialog.Close>
+                                <Button onClick={handleAddLora} disabled={!selectedLoraId}>
+                                    追加
+                                </Button>
+                            </Flex>
+                        </Dialog.Content>
+                    </Dialog.Root>
                 )}
             </Flex>
 

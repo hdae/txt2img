@@ -74,6 +74,7 @@ class ServerInfo(BaseModel):
 
     model_name: str
     training_resolution: str
+    output_format: str = Field(default="png", description="Output image format (png or webp)")
     available_loras: list[LoraInfo] = Field(default_factory=list)
     parameter_schema: dict[str, Any] = Field(
         default_factory=dict, description="JSON Schema for generation parameters"

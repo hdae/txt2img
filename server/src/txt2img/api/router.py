@@ -16,7 +16,7 @@ from txt2img.api.schemas import (
     ServerInfo,
 )
 from txt2img.api.sse import gallery_sse_endpoint, sse_endpoint
-from txt2img.config import get_settings
+from txt2img.config import get_output_format, get_settings
 from txt2img.core.image_processor import list_images
 from txt2img.core.job_queue import GenerationParams, job_queue
 from txt2img.core.lora_manager import lora_manager
@@ -116,7 +116,6 @@ async def get_image_with_ext(image_id: str, ext: str) -> FileResponse:
     return FileResponse(
         path=file_path,
         media_type=media_type,
-        filename=file_path.name,
     )
 
 
@@ -163,6 +162,7 @@ async def get_server_info() -> ServerInfo:
     return ServerInfo(
         model_name=get_pipeline().model_name or "Not loaded",
         training_resolution=str(config.training_resolution),
+        output_format=get_output_format().value,
         available_loras=available_loras,
         parameter_schema=get_pipeline().get_parameter_schema(),
     )

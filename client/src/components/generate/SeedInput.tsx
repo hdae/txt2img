@@ -1,15 +1,16 @@
 /**
- * SeedInput - Random seed input
+ * SeedInput - Seed with lock toggle
  */
 
-import { Box, Flex, IconButton, Text, TextField } from "@radix-ui/themes"
-import { Shuffle } from "lucide-react"
+import { Box, Flex, Switch, Text, TextField } from "@radix-ui/themes"
 
 import { useGenerateStore } from "@/stores/generateStore"
 
 export const SeedInput = () => {
     const seed = useGenerateStore((state) => state.form.seed)
+    const seedLocked = useGenerateStore((state) => state.form.seedLocked)
     const setSeed = useGenerateStore((state) => state.setSeed)
+    const toggleSeedLocked = useGenerateStore((state) => state.toggleSeedLocked)
 
     const handleChange = (value: string) => {
         if (value === "") {
@@ -22,34 +23,30 @@ export const SeedInput = () => {
         }
     }
 
-    const handleRandomize = () => {
-        setSeed(Math.floor(Math.random() * 2147483647))
-    }
-
     return (
         <Box>
-            <Text as="label" size="2" weight="medium" mb="2" style={{ display: "block" }}>
-                シード
-            </Text>
-            <Flex gap="2" align="center">
-                <TextField.Root
-                    value={seed === null ? "" : seed.toString()}
-                    onChange={(e) => handleChange(e.target.value)}
-                    placeholder="ランダム"
-                    type="number"
-                    style={{ flex: 1 }}
-                />
-                <IconButton
-                    variant="soft"
-                    onClick={handleRandomize}
-                    title="ランダムシードを生成"
-                >
-                    <Shuffle size={16} />
-                </IconButton>
+            <Flex justify="between" align="center" mb="2">
+                <Text as="label" size="2" weight="medium">
+                    シード
+                </Text>
+                <Flex align="center" gap="2">
+                    <Text size="1" color="gray">
+                        固定
+                    </Text>
+                    <Switch
+                        size="1"
+                        checked={seedLocked}
+                        onCheckedChange={toggleSeedLocked}
+                    />
+                </Flex>
             </Flex>
-            <Text size="1" color="gray" mt="1">
-                空欄でランダム
-            </Text>
+            <TextField.Root
+                value={seed === null ? "" : seed.toString()}
+                onChange={(e) => handleChange(e.target.value)}
+                placeholder={seedLocked ? "シードを入力..." : "ランダム"}
+                type="number"
+                disabled={!seedLocked}
+            />
         </Box>
     )
 }

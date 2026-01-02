@@ -28,9 +28,12 @@ export function createSSEConnection(
     // Handle named events
     const eventTypes = [
         "status",
+        "started",
+        "queue_update",
         "progress",
         "completed",
         "failed",
+        "error",
         "ping",
         "connected",
         "new_image",
