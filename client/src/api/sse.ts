@@ -82,7 +82,7 @@ export function connectToJobSSE(
     jobId: string,
     options: Omit<SSEOptions, "eventTypes">
 ): () => void {
-    return createSSEConnection(`/api/sse/${jobId}`, {
+    return createSSEConnection(`/api/jobs/${jobId}/sse`, {
         ...options,
         eventTypes: DEFAULT_JOB_EVENT_TYPES,
     })
@@ -94,7 +94,7 @@ export function connectToJobSSE(
 export function connectToGallerySSE(
     options: Omit<SSEOptions, "eventTypes">
 ): () => void {
-    return createSSEConnection("/api/sse/gallery", {
+    return createSSEConnection("/api/gallery/sse", {
         ...options,
         eventTypes: DEFAULT_GALLERY_EVENT_TYPES,
     })

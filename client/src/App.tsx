@@ -8,6 +8,7 @@ import { Box, ScrollArea, Tabs, Theme } from "@radix-ui/themes"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Toaster } from "react-hot-toast"
 
+import { GalleryTab } from "@/components/gallery/GalleryTab"
 import { GenerateTab } from "@/components/generate/GenerateTab"
 import { ServerInfoTab } from "@/components/server/ServerInfoTab"
 
@@ -36,7 +37,7 @@ export const App = () => {
               </Tabs.Content>
 
               <Tabs.Content value="gallery">
-                <Box py="4">ギャラリー（実装予定）</Box>
+                <GalleryTab />
               </Tabs.Content>
 
               <Tabs.Content value="server">

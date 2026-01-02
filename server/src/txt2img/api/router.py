@@ -62,20 +62,20 @@ async def generate_image(request: GenerateRequest) -> GenerateResponse:
 
     return GenerateResponse(
         job_id=job.id,
-        sse_url=f"/api/sse/{job.id}",
+        sse_url=f"/api/jobs/{job.id}/sse",
     )
 
 
-@router.get("/sse/{job_id}")
-async def get_job_sse(request: Request, job_id: str):
-    """SSE endpoint for job progress updates."""
-    return await sse_endpoint(request, job_id)
-
-
-@router.get("/sse/gallery")
+@router.get("/gallery/sse")
 async def get_gallery_sse(request: Request):
     """SSE endpoint for gallery updates (new images)."""
     return await gallery_sse_endpoint(request)
+
+
+@router.get("/jobs/{job_id}/sse")
+async def get_job_sse(request: Request, job_id: str):
+    """SSE endpoint for job progress updates."""
+    return await sse_endpoint(request, job_id)
 
 
 @router.get("/images", response_model=ImageListResponse)
