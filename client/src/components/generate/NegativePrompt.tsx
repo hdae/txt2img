@@ -1,10 +1,12 @@
 /**
- * NegativePrompt - CodeMirror-based negative prompt editor
+ * NegativePrompt - CodeMirror-based negative prompt editor with Radix UI theme
  */
 
+import { EditorView } from "@codemirror/view"
 import { Box, Text } from "@radix-ui/themes"
 import CodeMirror from "@uiw/react-codemirror"
 
+import { radixDarkTheme } from "@/lib/codemirror-theme"
 import { useGenerateStore } from "@/stores/generateStore"
 
 export const NegativePrompt = () => {
@@ -21,7 +23,8 @@ export const NegativePrompt = () => {
                 onChange={setNegativePrompt}
                 height="80px"
                 placeholder="避けたい要素..."
-                theme="dark"
+                theme={radixDarkTheme}
+                extensions={[EditorView.lineWrapping]}
                 basicSetup={{
                     lineNumbers: false,
                     foldGutter: false,

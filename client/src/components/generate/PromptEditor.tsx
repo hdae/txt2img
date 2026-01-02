@@ -1,10 +1,12 @@
 /**
- * PromptEditor - CodeMirror-based prompt editor
+ * PromptEditor - CodeMirror-based prompt editor with Radix UI theme
  */
 
+import { EditorView } from "@codemirror/view"
 import { Box, Text } from "@radix-ui/themes"
 import CodeMirror from "@uiw/react-codemirror"
 
+import { radixDarkTheme } from "@/lib/codemirror-theme"
 import { useGenerateStore } from "@/stores/generateStore"
 
 export const PromptEditor = () => {
@@ -21,7 +23,8 @@ export const PromptEditor = () => {
                 onChange={setPrompt}
                 height="120px"
                 placeholder="プロンプトを入力..."
-                theme="dark"
+                theme={radixDarkTheme}
+                extensions={[EditorView.lineWrapping]}
                 basicSetup={{
                     lineNumbers: false,
                     foldGutter: false,
