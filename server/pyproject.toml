@@ -2,7 +2,6 @@
 name = "txt2img"
 version = "0.1.0"
 description = "Text-to-Image generation service using Diffusers"
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.127.0",
