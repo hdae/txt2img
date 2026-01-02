@@ -92,6 +92,7 @@ tasks:
 
   deploy.build:
     desc: Build deployment image
+    deps: [build.client]
     vars:
       DATE:
         sh: date +%Y%m%d

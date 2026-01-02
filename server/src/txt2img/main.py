@@ -183,6 +183,33 @@ app.add_middleware(
 # Include API router
 app.include_router(router)
 
+# Serve static client files (production build)
+# Mount at /static and serve index.html for SPA routing
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+CLIENT_DIST_DIR = Path("/workspace/client")
+
+if CLIENT_DIST_DIR.exists():
+    # Serve static assets
+    app.mount("/assets", StaticFiles(directory=CLIENT_DIST_DIR / "assets"), name="assets")
+
+    # Serve index.html for root
+    @app.get("/")
+    async def serve_root():
+        return FileResponse(CLIENT_DIST_DIR / "index.html")
+
+    # Catch-all for SPA routing (except /api and /health)
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        # If it's a static file, try to serve it
+        file_path = CLIENT_DIST_DIR / path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # Otherwise return index.html for SPA routing
+        return FileResponse(CLIENT_DIST_DIR / "index.html")
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):

@@ -29,6 +29,9 @@ COPY server/presets ./presets
 # Install the project itself
 RUN uv sync --frozen --no-dev
 
+# Copy client build for static serving
+COPY client/dist /workspace/client
+
 # Create necessary directories
 RUN mkdir -p /workspace/models /workspace/outputs /workspace/.hf-cache
 

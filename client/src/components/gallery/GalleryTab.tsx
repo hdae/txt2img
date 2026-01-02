@@ -2,7 +2,7 @@
  * GalleryTab - Display generated images in a grid
  */
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes"
 import { useInfiniteQuery } from "@tanstack/react-query"
@@ -17,6 +17,7 @@ import { ImageGrid } from "./ImageGrid"
 export const GalleryTab = () => {
     const { data: serverInfo } = useServerInfo()
     const outputFormat = serverInfo?.output_format || "png"
+    const loadMoreRef = useRef<HTMLDivElement>(null)
 
     const {
         data,
@@ -50,6 +51,29 @@ export const GalleryTab = () => {
         })
         return cleanup
     }, [refetch])
+
+    // Auto-load more when scrolling to bottom
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+                    fetchNextPage()
+                }
+            },
+            { threshold: 0.1 }
+        )
+
+        const el = loadMoreRef.current
+        if (el) {
+            observer.observe(el)
+        }
+
+        return () => {
+            if (el) {
+                observer.unobserve(el)
+            }
+        }
+    }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
     // Flatten all pages into single array
     const images: ImageInfo[] = data?.pages.flatMap((page) => page.images) ?? []
@@ -94,24 +118,15 @@ export const GalleryTab = () => {
                 images={images}
                 getThumbnailUrl={(id: string) => getThumbnailUrl(id)}
                 getFullUrl={(id: string) => getImageUrl(id, outputFormat)}
+                onReachEnd={hasNextPage && !isFetchingNextPage ? fetchNextPage : undefined}
             />
 
-            {hasNextPage && (
+            {/* Intersection observer target for auto-loading */}
+            <div ref={loadMoreRef} style={{ height: "1px" }} />
+
+            {isFetchingNextPage && (
                 <Flex justify="center" py="4">
-                    <button
-                        onClick={() => fetchNextPage()}
-                        disabled={isFetchingNextPage}
-                        style={{
-                            padding: "8px 24px",
-                            borderRadius: "var(--radius-2)",
-                            border: "1px solid var(--gray-6)",
-                            background: "var(--gray-3)",
-                            color: "var(--gray-12)",
-                            cursor: isFetchingNextPage ? "wait" : "pointer",
-                        }}
-                    >
-                        {isFetchingNextPage ? "読み込み中..." : "もっと読み込む"}
-                    </button>
+                    <Spinner size="2" />
                 </Flex>
             )}
         </Flex>

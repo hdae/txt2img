@@ -50,6 +50,9 @@ services:
       # Source code (development mount)
       - ./server:/workspace/app
 
+      # Client build (production)
+      - ./client/dist:/workspace/client
+
     tty: true
     security_opt:
       - no-new-privileges:true

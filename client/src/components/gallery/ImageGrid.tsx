@@ -2,7 +2,7 @@
  * ImageGrid - Display images in a responsive grid with modal preview
  */
 
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
 import { Box, Grid } from "@radix-ui/themes"
 
@@ -17,27 +17,40 @@ interface ImageGridProps {
     }[]
     getThumbnailUrl: (id: string) => string
     getFullUrl: (id: string) => string
+    onReachEnd?: () => void
 }
 
-export const ImageGrid = ({ images, getThumbnailUrl, getFullUrl }: ImageGridProps) => {
-    const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+export const ImageGrid = ({ images, getThumbnailUrl, getFullUrl, onReachEnd }: ImageGridProps) => {
+    const [selectedImageId, setSelectedImageId] = useState<string | null>(null)
 
+    // Build ID to index map for navigation
+    const idToIndex = useMemo(() => {
+        const map = new Map<string, number>()
+        images.forEach((img, idx) => map.set(img.id, idx))
+        return map
+    }, [images])
+
+    const selectedIndex = selectedImageId !== null ? idToIndex.get(selectedImageId) ?? null : null
     const selectedImage = selectedIndex !== null ? images[selectedIndex] : null
 
     const handlePrev = useCallback(() => {
         if (selectedIndex !== null && selectedIndex > 0) {
-            setSelectedIndex(selectedIndex - 1)
+            setSelectedImageId(images[selectedIndex - 1].id)
         }
-    }, [selectedIndex])
+    }, [selectedIndex, images])
 
     const handleNext = useCallback(() => {
         if (selectedIndex !== null && selectedIndex < images.length - 1) {
-            setSelectedIndex(selectedIndex + 1)
+            setSelectedImageId(images[selectedIndex + 1].id)
+        } else if (selectedIndex !== null && selectedIndex === images.length - 1 && onReachEnd) {
+            // At the end, fetch more
+            onReachEnd()
         }
-    }, [selectedIndex, images.length])
+    }, [selectedIndex, images, onReachEnd])
 
     const hasPrev = selectedIndex !== null && selectedIndex > 0
-    const hasNext = selectedIndex !== null && selectedIndex < images.length - 1
+    // Always show next if onReachEnd is available (more can be loaded)
+    const hasNext = selectedIndex !== null && (selectedIndex < images.length - 1 || !!onReachEnd)
 
     return (
         <>
@@ -45,10 +58,10 @@ export const ImageGrid = ({ images, getThumbnailUrl, getFullUrl }: ImageGridProp
                 columns={{ initial: "3", sm: "4", md: "5", lg: "6" }}
                 gap="2"
             >
-                {images.map((image, index) => (
+                {images.map((image) => (
                     <Box
                         key={image.id}
-                        onClick={() => setSelectedIndex(index)}
+                        onClick={() => setSelectedImageId(image.id)}
                         style={{
                             aspectRatio: "1 / 1",
                             borderRadius: "var(--radius-2)",
@@ -83,7 +96,7 @@ export const ImageGrid = ({ images, getThumbnailUrl, getFullUrl }: ImageGridProp
                 <ImageModal
                     imageUrl={getFullUrl(selectedImage.id)}
                     metadata={selectedImage.metadata}
-                    onClose={() => setSelectedIndex(null)}
+                    onClose={() => setSelectedImageId(null)}
                     onPrev={hasPrev ? handlePrev : undefined}
                     onNext={hasNext ? handleNext : undefined}
                 />
