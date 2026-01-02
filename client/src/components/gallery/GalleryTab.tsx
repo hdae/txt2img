@@ -1,56 +1,29 @@
 /**
  * GalleryTab - Display generated images in a grid
+ * Uses GalleryContext for state management
  */
 
 import { useEffect, useRef } from "react"
 
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes"
-import { useInfiniteQuery } from "@tanstack/react-query"
 
-import { getImages, getImageUrl, getThumbnailUrl } from "@/api/client"
-import { connectToGallerySSE } from "@/api/sse"
-import type { ImageInfo } from "@/api/types"
-import { useServerInfo } from "@/hooks/useServerInfo"
+import { useGalleryContext } from "@/contexts/GalleryContext"
 
 import { ImageGrid } from "./ImageGrid"
 
 export const GalleryTab = () => {
-    const { data: serverInfo } = useServerInfo()
-    const outputFormat = serverInfo?.output_format || "png"
-    const loadMoreRef = useRef<HTMLDivElement>(null)
-
     const {
-        data,
-        fetchNextPage,
-        hasNextPage,
-        isFetchingNextPage,
+        images,
         isLoading,
         isError,
-        refetch,
-    } = useInfiniteQuery({
-        queryKey: ["gallery"],
-        queryFn: async ({ pageParam = 0 }) => {
-            return getImages(50, pageParam)
-        },
-        getNextPageParam: (lastPage) => {
-            const nextOffset = lastPage.offset + lastPage.limit
-            return nextOffset < lastPage.total ? nextOffset : undefined
-        },
-        initialPageParam: 0,
-    })
+        isFetchingNextPage,
+        hasNextPage,
+        fetchNextPage,
+        getThumbnailUrl,
+        getFullUrl,
+    } = useGalleryContext()
 
-    // Subscribe to gallery SSE for real-time updates
-    useEffect(() => {
-        const cleanup = connectToGallerySSE({
-            onMessage: (event: string) => {
-                if (event === "new_image") {
-                    // Refetch first page to show new image
-                    refetch()
-                }
-            },
-        })
-        return cleanup
-    }, [refetch])
+    const loadMoreRef = useRef<HTMLDivElement>(null)
 
     // Auto-load more when scrolling to bottom
     useEffect(() => {
@@ -74,9 +47,6 @@ export const GalleryTab = () => {
             }
         }
     }, [hasNextPage, isFetchingNextPage, fetchNextPage])
-
-    // Flatten all pages into single array
-    const images: ImageInfo[] = data?.pages.flatMap((page) => page.images) ?? []
 
     if (isLoading) {
         return (
@@ -116,8 +86,8 @@ export const GalleryTab = () => {
         <Flex direction="column" gap="4">
             <ImageGrid
                 images={images}
-                getThumbnailUrl={(id: string) => getThumbnailUrl(id)}
-                getFullUrl={(id: string) => getImageUrl(id, outputFormat)}
+                getThumbnailUrl={getThumbnailUrl}
+                getFullUrl={getFullUrl}
                 onReachEnd={hasNextPage && !isFetchingNextPage ? fetchNextPage : undefined}
             />
 
