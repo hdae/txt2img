@@ -1,10 +1,17 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import "ress/dist/ress.min.css"
 
-createRoot(document.getElementById('root')!).render(
+import { StrictMode } from "react"
+import { createRoot } from "react-dom/client"
+import { App } from "./App"
+
+const root = document.getElementById("root")
+
+if (root === null) {
+  throw new Error("Failed to initialize application.")
+}
+
+createRoot(root).render(
   <StrictMode>
     <App />
-  </StrictMode>,
+  </StrictMode>
 )
