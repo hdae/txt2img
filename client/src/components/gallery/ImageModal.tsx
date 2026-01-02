@@ -2,14 +2,18 @@
  * ImageModal - Full-screen modal for image preview with metadata
  */
 
+import { useCallback, useEffect, useRef } from "react"
+
 import { Badge, Box, Flex, Grid, IconButton, ScrollArea, Text } from "@radix-ui/themes"
-import { Download, ExternalLink, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, ExternalLink, X } from "lucide-react"
 import toast from "react-hot-toast"
 
 interface ImageModalProps {
     imageUrl: string
     metadata: Record<string, unknown>
     onClose: () => void
+    onPrev?: () => void
+    onNext?: () => void
 }
 
 // Parse prompt tags with weights (e.g., "(tag:1.2)" or "tag")
@@ -28,7 +32,7 @@ function parsePromptTags(prompt: string): { tag: string; weight: number }[] {
                 weight: parseFloat(weightMatch[2]),
             })
         } else {
-            // Check for multiple parentheses (Compel style: ((tag)) = 1.21^n)
+            // Check for multiple parentheses (Compel style: ((tag)) = 1.1^n)
             const parenMatch = part.match(/^(\(+)([^()]+)(\)+)$/)
             if (parenMatch && parenMatch[1].length === parenMatch[3].length) {
                 const depth = parenMatch[1].length
@@ -49,7 +53,155 @@ function parsePromptTags(prompt: string): { tag: string; weight: number }[] {
     return results
 }
 
-export const ImageModal = ({ imageUrl, metadata, onClose }: ImageModalProps) => {
+// Metadata content component (must be outside render)
+const MetadataContent = ({
+    promptTags,
+    negativeTags,
+    modelName,
+    seed,
+    steps,
+    cfgScale,
+    width,
+    height,
+}: {
+    promptTags: { tag: string; weight: number }[]
+    negativeTags: { tag: string; weight: number }[]
+    modelName?: string
+    seed?: number
+    steps?: number
+    cfgScale?: number
+    width?: number
+    height?: number
+}) => (
+    <Flex direction="column" gap="3" p="3">
+        {/* Prompt tags */}
+        {promptTags.length > 0 && (
+            <Box>
+                <Text size="1" color="gray" mb="1" style={{ display: "block" }}>
+                    プロンプト
+                </Text>
+                <Flex gap="1" wrap="wrap">
+                    {promptTags.map((item, i) => (
+                        <Badge
+                            key={i}
+                            size="1"
+                            variant={item.weight !== 1.0 ? "solid" : "soft"}
+                            color={item.weight > 1.0 ? "violet" : item.weight < 1.0 ? "gray" : undefined}
+                        >
+                            {item.tag}
+                            {item.weight !== 1.0 && (
+                                <Text size="1" color="gray" ml="1">
+                                    {item.weight.toFixed(2)}
+                                </Text>
+                            )}
+                        </Badge>
+                    ))}
+                </Flex>
+            </Box>
+        )}
+
+        {/* Negative prompt tags */}
+        {negativeTags.length > 0 && (
+            <Box>
+                <Text size="1" color="gray" mb="1" style={{ display: "block" }}>
+                    ネガティブ
+                </Text>
+                <Flex gap="1" wrap="wrap">
+                    {negativeTags.map((item, i) => (
+                        <Badge
+                            key={i}
+                            size="1"
+                            variant="outline"
+                            color="red"
+                        >
+                            {item.tag}
+                            {item.weight !== 1.0 && (
+                                <Text size="1" color="gray" ml="1">
+                                    {item.weight.toFixed(2)}
+                                </Text>
+                            )}
+                        </Badge>
+                    ))}
+                </Flex>
+            </Box>
+        )}
+
+        {/* Other metadata */}
+        <Flex direction="column" gap="2">
+            {modelName && (
+                <Flex justify="between">
+                    <Text size="1" color="gray">モデル</Text>
+                    <Text size="1">{modelName}</Text>
+                </Flex>
+            )}
+            {seed !== undefined && (
+                <Flex justify="between">
+                    <Text size="1" color="gray">Seed</Text>
+                    <Text size="1">{seed}</Text>
+                </Flex>
+            )}
+            {steps !== undefined && (
+                <Flex justify="between">
+                    <Text size="1" color="gray">Steps</Text>
+                    <Text size="1">{steps}</Text>
+                </Flex>
+            )}
+            {cfgScale !== undefined && (
+                <Flex justify="between">
+                    <Text size="1" color="gray">CFG Scale</Text>
+                    <Text size="1">{cfgScale}</Text>
+                </Flex>
+            )}
+            {width && height && (
+                <Flex justify="between">
+                    <Text size="1" color="gray">サイズ</Text>
+                    <Text size="1">{width} × {height}</Text>
+                </Flex>
+            )}
+        </Flex>
+    </Flex>
+)
+
+export const ImageModal = ({ imageUrl, metadata, onClose, onPrev, onNext }: ImageModalProps) => {
+    const touchStartX = useRef<number | null>(null)
+
+    // Keyboard navigation
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                onClose()
+            } else if (e.key === "ArrowLeft" && onPrev) {
+                onPrev()
+            } else if (e.key === "ArrowRight" && onNext) {
+                onNext()
+            }
+        }
+
+        window.addEventListener("keydown", handleKeyDown)
+        return () => window.removeEventListener("keydown", handleKeyDown)
+    }, [onClose, onPrev, onNext])
+
+    // Swipe handling
+    const handleTouchStart = useCallback((e: React.TouchEvent) => {
+        touchStartX.current = e.touches[0].clientX
+    }, [])
+
+    const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+        if (touchStartX.current === null) return
+
+        const touchEndX = e.changedTouches[0].clientX
+        const diff = touchStartX.current - touchEndX
+        const threshold = 50
+
+        if (diff > threshold && onNext) {
+            onNext()
+        } else if (diff < -threshold && onPrev) {
+            onPrev()
+        }
+
+        touchStartX.current = null
+    }, [onPrev, onNext])
+
     const handleDownload = async () => {
         const response = await fetch(imageUrl)
         const blob = await response.blob()
@@ -82,182 +234,186 @@ export const ImageModal = ({ imageUrl, metadata, onClose }: ImageModalProps) => 
     const promptTags = prompt ? parsePromptTags(prompt) : []
     const negativeTags = negativePrompt ? parsePromptTags(negativePrompt) : []
 
+    const metadataProps = {
+        promptTags,
+        negativeTags,
+        modelName,
+        seed,
+        steps,
+        cfgScale,
+        width,
+        height,
+    }
+
     return (
         <Box
-            onClick={onClose}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             style={{
                 position: "fixed",
                 inset: 0,
                 backgroundColor: "rgba(0, 0, 0, 0.95)",
                 zIndex: 1000,
-                cursor: "pointer",
             }}
         >
-            {/* Desktop: side-by-side layout, Mobile: stacked */}
-            <Grid
-                columns={{ initial: "1", md: "1fr 320px" }}
-                rows={{ initial: "1fr auto", md: "1fr" }}
+            {/* PC Layout: side-by-side */}
+            <Box display={{ initial: "none", md: "block" }} style={{ height: "100%" }}>
+                <Grid columns="1fr 320px" style={{ height: "100%" }}>
+                    {/* Image area with navigation */}
+                    <Flex
+                        align="center"
+                        justify="center"
+                        p="4"
+                        onClick={onClose}
+                        style={{ cursor: "pointer", overflow: "hidden", position: "relative" }}
+                    >
+                        {/* Prev button */}
+                        {onPrev && (
+                            <IconButton
+                                variant="soft"
+                                size="3"
+                                onClick={(e) => { e.stopPropagation(); onPrev() }}
+                                style={{
+                                    position: "absolute",
+                                    left: "16px",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                <ChevronLeft size={24} />
+                            </IconButton>
+                        )}
+
+                        <img
+                            src={imageUrl}
+                            alt="Preview"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                                maxWidth: "100%",
+                                maxHeight: "100%",
+                                objectFit: "contain",
+                                cursor: "default",
+                            }}
+                        />
+
+                        {/* Next button */}
+                        {onNext && (
+                            <IconButton
+                                variant="soft"
+                                size="3"
+                                onClick={(e) => { e.stopPropagation(); onNext() }}
+                                style={{
+                                    position: "absolute",
+                                    right: "16px",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                <ChevronRight size={24} />
+                            </IconButton>
+                        )}
+                    </Flex>
+
+                    {/* Metadata panel - full height */}
+                    <Flex
+                        direction="column"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            backgroundColor: "var(--gray-1)",
+                            cursor: "default",
+                            height: "100%",
+                        }}
+                    >
+                        {/* Header */}
+                        <Flex
+                            justify="between"
+                            align="center"
+                            p="3"
+                            style={{ borderBottom: "1px solid var(--gray-4)" }}
+                        >
+                            <Text size="2" weight="medium">画像情報</Text>
+                            <Flex gap="1">
+                                <IconButton variant="soft" size="1" onClick={handleDownload}>
+                                    <Download size={16} />
+                                </IconButton>
+                                <IconButton variant="soft" size="1" onClick={handleOpenInNewTab}>
+                                    <ExternalLink size={16} />
+                                </IconButton>
+                                <IconButton variant="soft" size="1" onClick={onClose}>
+                                    <X size={16} />
+                                </IconButton>
+                            </Flex>
+                        </Flex>
+                        {/* Scrollable content */}
+                        <ScrollArea style={{ flex: 1 }}>
+                            <MetadataContent {...metadataProps} />
+                        </ScrollArea>
+                    </Flex>
+                </Grid>
+            </Box>
+
+            {/* Mobile Layout: stacked */}
+            <Flex
+                direction="column"
+                display={{ initial: "flex", md: "none" }}
                 style={{ height: "100%" }}
             >
-                {/* Image area */}
+                {/* Image area - takes remaining space */}
                 <Flex
+                    flexGrow="1"
                     align="center"
                     justify="center"
                     p="4"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ cursor: "default", overflow: "hidden" }}
+                    onClick={onClose}
+                    style={{ cursor: "pointer", overflow: "hidden", minHeight: 0 }}
                 >
                     <img
                         src={imageUrl}
                         alt="Preview"
+                        onClick={(e) => e.stopPropagation()}
                         style={{
                             maxWidth: "100%",
                             maxHeight: "100%",
                             objectFit: "contain",
+                            cursor: "default",
                         }}
                     />
                 </Flex>
 
-                {/* Metadata panel */}
+                {/* Metadata panel - fixed height with scroll */}
                 <Box
                     onClick={(e) => e.stopPropagation()}
                     style={{
                         backgroundColor: "var(--gray-1)",
                         cursor: "default",
-                        maxHeight: "100vh",
-                        overflow: "hidden",
+                        height: "200px",
+                        flexShrink: 0,
                     }}
                 >
-                    {/* Header with actions */}
+                    {/* Header */}
                     <Flex
                         justify="between"
                         align="center"
-                        p="3"
-                        style={{
-                            borderBottom: "1px solid var(--gray-4)",
-                        }}
+                        p="2"
+                        style={{ borderBottom: "1px solid var(--gray-4)" }}
                     >
                         <Text size="2" weight="medium">画像情報</Text>
                         <Flex gap="1">
-                            <IconButton
-                                variant="ghost"
-                                size="1"
-                                onClick={handleDownload}
-                                style={{ cursor: "pointer" }}
-                            >
+                            <IconButton variant="soft" size="1" onClick={handleDownload}>
                                 <Download size={16} />
                             </IconButton>
-                            <IconButton
-                                variant="ghost"
-                                size="1"
-                                onClick={handleOpenInNewTab}
-                                style={{ cursor: "pointer" }}
-                            >
+                            <IconButton variant="soft" size="1" onClick={handleOpenInNewTab}>
                                 <ExternalLink size={16} />
                             </IconButton>
-                            <IconButton
-                                variant="ghost"
-                                size="1"
-                                onClick={onClose}
-                                style={{ cursor: "pointer" }}
-                            >
+                            <IconButton variant="soft" size="1" onClick={onClose}>
                                 <X size={16} />
                             </IconButton>
                         </Flex>
                     </Flex>
-
                     {/* Scrollable content */}
-                    <ScrollArea style={{ height: "calc(100vh - 48px)" }}>
-                        <Flex direction="column" gap="3" p="3">
-                            {/* Prompt tags */}
-                            {promptTags.length > 0 && (
-                                <Box>
-                                    <Text size="1" color="gray" mb="1" style={{ display: "block" }}>
-                                        プロンプト
-                                    </Text>
-                                    <Flex gap="1" wrap="wrap">
-                                        {promptTags.map((item, i) => (
-                                            <Badge
-                                                key={i}
-                                                size="1"
-                                                variant={item.weight !== 1.0 ? "solid" : "soft"}
-                                                color={item.weight > 1.0 ? "violet" : item.weight < 1.0 ? "gray" : undefined}
-                                            >
-                                                {item.tag}
-                                                {item.weight !== 1.0 && (
-                                                    <Text size="1" color="gray" ml="1">
-                                                        {item.weight.toFixed(2)}
-                                                    </Text>
-                                                )}
-                                            </Badge>
-                                        ))}
-                                    </Flex>
-                                </Box>
-                            )}
-
-                            {/* Negative prompt tags */}
-                            {negativeTags.length > 0 && (
-                                <Box>
-                                    <Text size="1" color="gray" mb="1" style={{ display: "block" }}>
-                                        ネガティブ
-                                    </Text>
-                                    <Flex gap="1" wrap="wrap">
-                                        {negativeTags.map((item, i) => (
-                                            <Badge
-                                                key={i}
-                                                size="1"
-                                                variant="outline"
-                                                color="red"
-                                            >
-                                                {item.tag}
-                                                {item.weight !== 1.0 && (
-                                                    <Text size="1" color="gray" ml="1">
-                                                        {item.weight.toFixed(2)}
-                                                    </Text>
-                                                )}
-                                            </Badge>
-                                        ))}
-                                    </Flex>
-                                </Box>
-                            )}
-
-                            {/* Other metadata */}
-                            <Flex direction="column" gap="2">
-                                {modelName && (
-                                    <Flex justify="between">
-                                        <Text size="1" color="gray">モデル</Text>
-                                        <Text size="1">{modelName}</Text>
-                                    </Flex>
-                                )}
-                                {seed !== undefined && (
-                                    <Flex justify="between">
-                                        <Text size="1" color="gray">Seed</Text>
-                                        <Text size="1">{seed}</Text>
-                                    </Flex>
-                                )}
-                                {steps !== undefined && (
-                                    <Flex justify="between">
-                                        <Text size="1" color="gray">Steps</Text>
-                                        <Text size="1">{steps}</Text>
-                                    </Flex>
-                                )}
-                                {cfgScale !== undefined && (
-                                    <Flex justify="between">
-                                        <Text size="1" color="gray">CFG Scale</Text>
-                                        <Text size="1">{cfgScale}</Text>
-                                    </Flex>
-                                )}
-                                {width && height && (
-                                    <Flex justify="between">
-                                        <Text size="1" color="gray">サイズ</Text>
-                                        <Text size="1">{width} × {height}</Text>
-                                    </Flex>
-                                )}
-                            </Flex>
-                        </Flex>
+                    <ScrollArea style={{ height: "calc(200px - 40px)" }}>
+                        <MetadataContent {...metadataProps} />
                     </ScrollArea>
                 </Box>
-            </Grid>
+            </Flex>
         </Box>
     )
 }

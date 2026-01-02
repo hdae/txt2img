@@ -186,7 +186,7 @@ def load_image_metadata(image_id: str) -> ImageMetadata | None:
     return ImageMetadata(**data)
 
 
-def list_images(limit: int = 50, offset: int = 0) -> list[dict]:
+def list_images(limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
     """List generated images.
 
     Args:
@@ -194,23 +194,25 @@ def list_images(limit: int = 50, offset: int = 0) -> list[dict]:
         offset: Offset for pagination
 
     Returns:
-        List of image info dicts
+        Tuple of (list of image info dicts, total count)
     """
     settings = get_settings()
     meta_dir = settings.output_dir / "metadata"
 
     if not meta_dir.exists():
-        return []
+        return [], 0
 
     # Get all metadata files sorted by modification time (newest first)
-    meta_files = sorted(
+    all_meta_files = sorted(
         meta_dir.glob("*.json"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
 
+    total = len(all_meta_files)
+
     # Apply pagination
-    meta_files = meta_files[offset : offset + limit]
+    meta_files = all_meta_files[offset : offset + limit]
 
     results = []
     for meta_path in meta_files:
@@ -227,7 +229,7 @@ def list_images(limit: int = 50, offset: int = 0) -> list[dict]:
             }
         )
 
-    return results
+    return results, total
 
 
 def image_to_base64(image: Image.Image, format: str = "webp", quality: int = 80) -> str:

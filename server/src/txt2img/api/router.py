@@ -84,11 +84,11 @@ async def get_images(
     offset: int = Query(default=0, ge=0),
 ) -> ImageListResponse:
     """Get list of generated images (gallery)."""
-    images = list_images(limit=limit, offset=offset)
+    images, total = list_images(limit=limit, offset=offset)
 
     return ImageListResponse(
         images=[ImageInfo(**img) for img in images],
-        total=len(images),  # TODO: Get actual total count
+        total=total,
         offset=offset,
         limit=limit,
     )

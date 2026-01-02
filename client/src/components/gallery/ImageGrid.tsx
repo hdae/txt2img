@@ -2,7 +2,7 @@
  * ImageGrid - Display images in a responsive grid with modal preview
  */
 
-import { useState } from "react"
+import { useCallback, useState } from "react"
 
 import { Box, Grid } from "@radix-ui/themes"
 
@@ -20,11 +20,24 @@ interface ImageGridProps {
 }
 
 export const ImageGrid = ({ images, getThumbnailUrl, getFullUrl }: ImageGridProps) => {
-    const [selectedImageId, setSelectedImageId] = useState<string | null>(null)
+    const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
 
-    const selectedImage = selectedImageId
-        ? images.find((img) => img.id === selectedImageId)
-        : null
+    const selectedImage = selectedIndex !== null ? images[selectedIndex] : null
+
+    const handlePrev = useCallback(() => {
+        if (selectedIndex !== null && selectedIndex > 0) {
+            setSelectedIndex(selectedIndex - 1)
+        }
+    }, [selectedIndex])
+
+    const handleNext = useCallback(() => {
+        if (selectedIndex !== null && selectedIndex < images.length - 1) {
+            setSelectedIndex(selectedIndex + 1)
+        }
+    }, [selectedIndex, images.length])
+
+    const hasPrev = selectedIndex !== null && selectedIndex > 0
+    const hasNext = selectedIndex !== null && selectedIndex < images.length - 1
 
     return (
         <>
@@ -32,10 +45,10 @@ export const ImageGrid = ({ images, getThumbnailUrl, getFullUrl }: ImageGridProp
                 columns={{ initial: "3", sm: "4", md: "5", lg: "6" }}
                 gap="2"
             >
-                {images.map((image) => (
+                {images.map((image, index) => (
                     <Box
                         key={image.id}
-                        onClick={() => setSelectedImageId(image.id)}
+                        onClick={() => setSelectedIndex(index)}
                         style={{
                             aspectRatio: "1 / 1",
                             borderRadius: "var(--radius-2)",
@@ -70,7 +83,9 @@ export const ImageGrid = ({ images, getThumbnailUrl, getFullUrl }: ImageGridProp
                 <ImageModal
                     imageUrl={getFullUrl(selectedImage.id)}
                     metadata={selectedImage.metadata}
-                    onClose={() => setSelectedImageId(null)}
+                    onClose={() => setSelectedIndex(null)}
+                    onPrev={hasPrev ? handlePrev : undefined}
+                    onNext={hasNext ? handleNext : undefined}
                 />
             )}
         </>
