@@ -11,6 +11,9 @@ from txt2img.core.job_queue import JobStatus, job_queue
 
 logger = logging.getLogger(__name__)
 
+# Headers to disable buffering in proxies (Nginx, Cloudflare, etc.)
+SSE_HEADERS = {"X-Accel-Buffering": "no"}
+
 
 async def job_event_generator(request: Request, job_id: str):
     """Generate SSE events for a job.
@@ -113,6 +116,7 @@ async def sse_endpoint(request: Request, job_id: str) -> EventSourceResponse:
     return EventSourceResponse(
         job_event_generator(request, job_id),
         media_type="text/event-stream",
+        headers=SSE_HEADERS,
     )
 
 
@@ -173,4 +177,5 @@ async def gallery_sse_endpoint(request: Request) -> EventSourceResponse:
     return EventSourceResponse(
         gallery_event_generator(request),
         media_type="text/event-stream",
+        headers=SSE_HEADERS,
     )
