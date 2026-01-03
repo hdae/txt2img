@@ -1,6 +1,8 @@
 /**
- * Tag database for autocomplete
- * Loads and searches danbooru.csv
+ * Tag Database - Load and search danbooru tags for autocomplete
+ *
+ * CSV Format: name,type,postCount,"aliases"
+ * Type: 0=general, 1=artist, 3=copyright, 4=character, 5=meta
  */
 
 import { parse } from "@std/csv"
@@ -9,35 +11,24 @@ import { parse } from "@std/csv"
 // Types
 // =============================================================================
 
-/**
- * Tag category types (from Danbooru)
- * @see https://github.com/DominikDoom/a1111-sd-webui-tagcomplete
- */
-export type TagCategory = 0 | 1 | 3 | 4 | 5
-
-export const TAG_CATEGORIES = {
-    0: { name: "general", color: "var(--blue-9)" },
-    1: { name: "artist", color: "var(--red-9)" },
-    3: { name: "copyright", color: "var(--purple-9)" },
-    4: { name: "character", color: "var(--green-9)" },
-    5: { name: "meta", color: "var(--orange-9)" },
-} as const
-
-export interface Tag {
+interface Tag {
     name: string
-    category: TagCategory
+    type: number
     postCount: number
     aliases: string[]
 }
 
-export interface TagSearchResult {
-    tag: Tag
-    matchedOn: "name" | "alias"
-    matchedAlias?: string
+// Type mapping for display
+const TAG_TYPE_NAMES: Record<number, string> = {
+    0: "general",
+    1: "artist",
+    3: "copyright",
+    4: "character",
+    5: "meta",
 }
 
 // =============================================================================
-// Tag Database
+// Database
 // =============================================================================
 
 let tags: Tag[] = []
@@ -47,82 +38,98 @@ let loadPromise: Promise<void> | null = null
 /**
  * Load tags from CSV file
  */
-export async function loadTagDatabase(): Promise<void> {
+async function loadTags(): Promise<void> {
+    if (isLoaded) return
+
+    const response = await fetch("/danbooru.csv")
+    const csvText = await response.text()
+
+    // Parse CSV using @std/csv
+    const rows = parse(csvText, {
+        skipFirstRow: false,
+    })
+
+    tags = rows.map((row) => ({
+        name: row[0],
+        type: parseInt(row[1], 10) || 0,
+        postCount: parseInt(row[2], 10) || 0,
+        aliases: row[3] ? row[3].split(",").map((a) => a.trim()) : [],
+    }))
+
+    // Sort by post count (descending) for default ordering
+    tags.sort((a, b) => b.postCount - a.postCount)
+
+    isLoaded = true
+    console.log(`[TagDatabase] Loaded ${tags.length} tags`)
+}
+
+/**
+ * Ensure tags are loaded (singleton pattern)
+ */
+export async function ensureTagsLoaded(): Promise<void> {
     if (isLoaded) return
     if (loadPromise) return loadPromise
-
-    loadPromise = (async () => {
-        try {
-            const response = await fetch("/danbooru.csv")
-            if (!response.ok) {
-                throw new Error(`Failed to load tags: ${response.status}`)
-            }
-
-            const text = await response.text()
-            const rows = parse(text)
-
-            tags = rows.map((row) => ({
-                name: row[0] ?? "",
-                category: (parseInt(row[1] ?? "0", 10) as TagCategory) || 0,
-                postCount: parseInt(row[2] ?? "0", 10) || 0,
-                aliases: row[3] ? row[3].split(",").map((a) => a.trim()).filter(Boolean) : [],
-            }))
-
-            isLoaded = true
-            console.log(`Loaded ${tags.length} tags`)
-        } catch (error) {
-            console.error("Failed to load tag database:", error)
-            throw error
-        }
-    })()
-
+    loadPromise = loadTags()
     return loadPromise
 }
 
-/**
- * Check if database is loaded
- */
-export function isTagDatabaseLoaded(): boolean {
-    return isLoaded
+// =============================================================================
+// Search
+// =============================================================================
+
+interface SearchResult {
+    tag: Tag
+    matchedBy: "name" | "alias"
+    matchedAlias?: string
 }
 
 /**
- * Search tags by prefix
- * @param query Search query (prefix match)
- * @param limit Maximum number of results
+ * Search tags by partial match (name and aliases)
+ * Query should be normalized (lowercase, spaces → underscores)
+ * @param query - Search query (already normalized)
+ * @param limit - Maximum results
+ * @returns Matching tags sorted by relevance (post count)
  */
-export function searchTags(query: string, limit = 20): TagSearchResult[] {
+export function searchTags(query: string, limit = 20): SearchResult[] {
     if (!isLoaded || !query) return []
 
-    const lowerQuery = query.toLowerCase()
-    const results: TagSearchResult[] = []
+    const q = query.toLowerCase()
+    // Also create a space version for matching display names
+    const qWithSpaces = q.replace(/_/g, " ")
+    const results: SearchResult[] = []
 
     for (const tag of tags) {
-        if (results.length >= limit) break
-
-        // Match on name
-        if (tag.name.toLowerCase().startsWith(lowerQuery)) {
-            results.push({ tag, matchedOn: "name" })
+        // Match by name (underscored)
+        if (tag.name.toLowerCase().includes(q)) {
+            results.push({ tag, matchedBy: "name" })
+            if (results.length >= limit) break
             continue
         }
 
-        // Match on aliases
-        for (const alias of tag.aliases) {
-            if (alias.toLowerCase().startsWith(lowerQuery)) {
-                results.push({ tag, matchedOn: "alias", matchedAlias: alias })
-                break
-            }
+        // Match by alias (may contain spaces or Japanese)
+        const matchedAlias = tag.aliases.find((alias) => {
+            const aliasLower = alias.toLowerCase()
+            // Match both underscore and space versions
+            return aliasLower.includes(q) || aliasLower.includes(qWithSpaces)
+        })
+        if (matchedAlias) {
+            results.push({ tag, matchedBy: "alias", matchedAlias })
+            if (results.length >= limit) break
         }
     }
 
-    // Sort by post count (popularity)
-    results.sort((a, b) => b.tag.postCount - a.tag.postCount)
-
-    return results.slice(0, limit)
+    return results
 }
 
 /**
- * Get tag count
+ * Get tag type name for display
+ */
+export function getTagTypeName(type: number): string {
+    return TAG_TYPE_NAMES[type] || "unknown"
+}
+
+/**
+ * Get all loaded tags (for debugging)
  */
 export function getTagCount(): number {
     return tags.length

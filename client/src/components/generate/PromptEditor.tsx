@@ -1,5 +1,5 @@
 /**
- * PromptEditor - CodeMirror-based prompt editor with Radix UI theme
+ * PromptEditor - CodeMirror-based prompt editor with Radix UI theme and tag autocomplete
  */
 
 import { EditorView } from "@codemirror/view"
@@ -8,7 +8,7 @@ import CodeMirror from "@uiw/react-codemirror"
 
 import { getPromptEditorExtensions } from "@/lib/codemirror-keymap"
 import { radixDarkTheme } from "@/lib/codemirror-theme"
-import { tagAutocomplete } from "@/lib/tag-autocomplete"
+import { tagAutocomplete, tagCategoryStyles } from "@/lib/tag-autocomplete"
 import { useGenerateStore } from "@/stores/generateStore"
 
 export const PromptEditor = () => {
@@ -30,13 +30,14 @@ export const PromptEditor = () => {
                     EditorView.lineWrapping,
                     ...getPromptEditorExtensions(),
                     tagAutocomplete(),
+                    tagCategoryStyles,
                 ]}
                 basicSetup={{
                     lineNumbers: false,
                     foldGutter: false,
                     highlightActiveLine: false,
                     history: false,
-                    autocompletion: false,  // Use custom autocomplete
+                    autocompletion: false,  // Disable default, we use custom
                 }}
                 style={{
                     fontSize: 14,
