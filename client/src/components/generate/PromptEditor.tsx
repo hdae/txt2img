@@ -8,6 +8,7 @@ import CodeMirror from "@uiw/react-codemirror"
 
 import { getPromptEditorExtensions } from "@/lib/codemirror-keymap"
 import { radixDarkTheme } from "@/lib/codemirror-theme"
+import { tagAutocomplete } from "@/lib/tag-autocomplete"
 import { useGenerateStore } from "@/stores/generateStore"
 
 export const PromptEditor = () => {
@@ -28,12 +29,14 @@ export const PromptEditor = () => {
                 extensions={[
                     EditorView.lineWrapping,
                     ...getPromptEditorExtensions(),
+                    tagAutocomplete(),
                 ]}
                 basicSetup={{
                     lineNumbers: false,
                     foldGutter: false,
                     highlightActiveLine: false,
-                    history: false,  // Disable default history, we use custom
+                    history: false,
+                    autocompletion: false,  // Use custom autocomplete
                 }}
                 style={{
                     fontSize: 14,
