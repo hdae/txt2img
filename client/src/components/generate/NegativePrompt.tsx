@@ -9,7 +9,7 @@ import { useMemo } from "react"
 
 import { useServerInfo } from "@/hooks/useServerInfo"
 import { getPromptEditorExtensions } from "@/lib/codemirror-keymap"
-import { radixDarkTheme } from "@/lib/codemirror-theme"
+import { radixDarkTheme, thickCaretStyle } from "@/lib/codemirror-theme"
 import { tagAutocomplete, tagCategoryStyles } from "@/lib/tag-autocomplete"
 import { useGenerateStore } from "@/stores/generateStore"
 
@@ -25,6 +25,7 @@ export const NegativePrompt = () => {
     const extensions = useMemo(() => {
         const base = [
             EditorView.lineWrapping,
+            thickCaretStyle,
             ...getPromptEditorExtensions(),
         ]
 
@@ -56,7 +57,7 @@ export const NegativePrompt = () => {
                     indentOnInput: false,
                 }}
                 style={{
-                    fontSize: 14,
+                    fontSize: 15,
                     borderRadius: "var(--radius-2)",
                     border: "1px solid var(--gray-6)",
                     overflow: "hidden",

@@ -27,9 +27,9 @@ export const ProgressView = () => {
                     <Text size="2" weight="medium">
                         {job.status === "queued" ? "キュー待機中" : "生成中"}
                     </Text>
-                    {job.queuePosition !== null && job.queuePosition > 0 && (
+                    {job.status === "queued" && job.queuePosition !== null && (
                         <Text size="2" color="gray">
-                            あと {job.queuePosition} 件
+                            あと {job.queuePosition + 1} 件
                         </Text>
                     )}
                 </Flex>
