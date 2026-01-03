@@ -16,6 +16,7 @@ import {
     undo,
     undoSelection
 } from "@codemirror/commands"
+import { Prec } from "@codemirror/state"
 import { EditorView, keymap, type KeyBinding } from "@codemirror/view"
 
 // ============================================================================
@@ -246,7 +247,8 @@ const promptKeymap: readonly KeyBinding[] = [
 export function getPromptEditorExtensions() {
     return [
         history(),
-        keymap.of(promptKeymap),
+        // Use highest priority to ensure our keybindings take precedence
+        Prec.highest(keymap.of(promptKeymap)),
         keymap.of(customHistoryKeymap),
     ]
 }

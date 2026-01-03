@@ -12,6 +12,7 @@
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
     "@codemirror/commands": "^6.10.1",
+    "@codemirror/state": "^6.5.3",
     "@codemirror/view": "^6.39.7",
     "@radix-ui/themes": "^3.2.1",
     "@std/csv": "jsr:^1.0.6",
