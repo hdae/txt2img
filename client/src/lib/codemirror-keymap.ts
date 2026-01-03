@@ -37,7 +37,6 @@ export function setOnGenerateCallback(callback: () => void) {
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function triggerGenerate(_view: EditorView): boolean {
-    console.log("[KeyMap] triggerGenerate called, callback:", onGenerateCallback)
     if (onGenerateCallback) {
         onGenerateCallback()
         return true

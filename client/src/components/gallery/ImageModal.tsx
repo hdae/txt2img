@@ -257,15 +257,19 @@ export const ImageModal = ({ imageUrl, metadata, onClose, onPrev, onNext }: Imag
             }}
         >
             {/* PC Layout: side-by-side */}
-            <Box display={{ initial: "none", md: "block" }} style={{ height: "100%" }}>
-                <Grid columns="1fr 320px" style={{ height: "100%" }}>
+            <Box display={{ initial: "none", md: "block" }} style={{ height: "100vh", overflow: "hidden" }}>
+                <Grid columns="1fr 320px" style={{ height: "100%", maxHeight: "100vh" }}>
                     {/* Image area with navigation */}
                     <Flex
                         align="center"
                         justify="center"
-                        p="4"
                         onClick={onClose}
-                        style={{ cursor: "pointer", overflow: "hidden", position: "relative" }}
+                        style={{
+                            cursor: "pointer",
+                            overflow: "hidden",
+                            position: "relative",
+                            maxHeight: "100vh",
+                        }}
                     >
                         {/* Prev button */}
                         {onPrev && (
@@ -312,14 +316,16 @@ export const ImageModal = ({ imageUrl, metadata, onClose, onPrev, onNext }: Imag
                         )}
                     </Flex>
 
-                    {/* Metadata panel - full height */}
+                    {/* Metadata panel - full height with scroll */}
                     <Flex
                         direction="column"
                         onClick={(e) => e.stopPropagation()}
                         style={{
                             backgroundColor: "var(--gray-1)",
                             cursor: "default",
-                            height: "100%",
+                            height: "100vh",
+                            maxHeight: "100vh",
+                            overflow: "hidden",
                         }}
                     >
                         {/* Header */}
@@ -327,7 +333,7 @@ export const ImageModal = ({ imageUrl, metadata, onClose, onPrev, onNext }: Imag
                             justify="between"
                             align="center"
                             p="3"
-                            style={{ borderBottom: "1px solid var(--gray-4)" }}
+                            style={{ borderBottom: "1px solid var(--gray-4)", flexShrink: 0 }}
                         >
                             <Text size="2" weight="medium">画像情報</Text>
                             <Flex gap="1">
@@ -343,7 +349,7 @@ export const ImageModal = ({ imageUrl, metadata, onClose, onPrev, onNext }: Imag
                             </Flex>
                         </Flex>
                         {/* Scrollable content */}
-                        <ScrollArea style={{ flex: 1 }}>
+                        <ScrollArea style={{ flex: 1, minHeight: 0 }}>
                             <MetadataContent {...metadataProps} />
                         </ScrollArea>
                     </Flex>
@@ -409,7 +415,7 @@ export const ImageModal = ({ imageUrl, metadata, onClose, onPrev, onNext }: Imag
                         </Flex>
                     </Flex>
                     {/* Scrollable content */}
-                    <ScrollArea style={{ height: "calc(200px - 40px)" }}>
+                    <ScrollArea>
                         <MetadataContent {...metadataProps} />
                     </ScrollArea>
                 </Box>
