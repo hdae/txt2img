@@ -122,6 +122,7 @@ tasks:
     desc: Run deployment image locally
     vars:
       IMAGE: "hdae/txt2img"
+    deps: [deploy.build]
     cmds:
       - |
           docker run --rm -it \

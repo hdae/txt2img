@@ -1,33 +1,34 @@
 # Syntax=docker/dockerfile:1
 
-# Base image with Python 3.13 and uv pre-installed
-FROM hdae/ai-base:latest
+# Stage 1: Generate requirements.txt using uv
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+
+WORKDIR /app
+COPY server/pyproject.toml server/uv.lock ./
+# Generate requirements.txt excluding development dependencies
+RUN uv export --frozen --no-dev --no-emit-project --output-file requirements.txt
+
+# Stage 2: Final image using official PyTorch base
+FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
 
 WORKDIR /workspace/app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    UV_PYTHON=3.12
+    PYTHONDONTWRITEBYTECODE=1
 
-# Copy dependency files
-# We copy pyproject.toml and uv.lock first to leverage Docker cache
-COPY server/pyproject.toml server/uv.lock README.md ./
+# Copy requirements from builder stage
+COPY --from=builder /app/requirements.txt .
 
+# Install dependencies using pip
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install dependencies
-# --frozen: Sync using lockfile and error if out of sync
-# --no-install-project: Install only dependencies, not the project itself yet
-RUN uv sync --frozen --no-install-project --no-dev
-
-# Copy application source code
+# Copy application source code and install the project
 COPY server/src ./src
-COPY server/presets ./presets
+COPY server/pyproject.toml README.md ./
+RUN pip install --no-deps -e .
 
-# Install the project itself
-RUN uv sync --frozen --no-dev
+COPY server/presets ./presets
 
 # Copy client build for static serving
 COPY client/dist /workspace/client
@@ -38,5 +39,5 @@ RUN mkdir -p /workspace/models /workspace/outputs /workspace/.hf-cache
 # Expose API port
 EXPOSE 8000
 
-# Set entrypoint using `uv run` to ensure correct environment
-ENTRYPOINT ["uv", "run", "uvicorn", "txt2img.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Set entrypoint (using uvicorn directly as uv is not in this image/needed)
+ENTRYPOINT ["uvicorn", "txt2img.main:app", "--host", "0.0.0.0", "--port", "8000"]
