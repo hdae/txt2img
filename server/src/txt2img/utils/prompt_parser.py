@@ -394,6 +394,110 @@ def parse_compel_prompt(prompt: str) -> ParsedPrompt:
     return ParsedPrompt(chunks=chunks)
 
 
+
+# --- Generic Helper Functions (Universal) ---
+
+def prepend_triggers(prompt: str, trigger_info: list[tuple[str, float]]) -> str:
+    """Prepend trigger words to a prompt with BREAK separation.
+
+    Args:
+        prompt: User prompt
+        trigger_info: List of (trigger_words, weight) tuples
+
+    Returns:
+        Prompt with prepended triggers (e.g. "trigger BREAK prompt")
+    """
+    if not trigger_info:
+        return prompt
+
+    trigger_parts = []
+    for trigger_words, weight in trigger_info:
+        if weight > 0:
+            # We assume trigger words provided are in A1111/LPW friendly format
+            # If we need to compel-ize them, we do it here.
+            # SDXL pipeline logic was: convert trigger to compel, then append.
+            # Let's use convert_a1111_to_compel which is safe.
+            compel_trigger = convert_a1111_to_compel(trigger_words)
+            if abs(weight - 1.0) > 0.001:
+                trigger_parts.append(f"({compel_trigger}){weight:.2f}")
+            else:
+                trigger_parts.append(compel_trigger)
+
+    if not trigger_parts:
+        return prompt
+
+    triggers_str = ", ".join(trigger_parts)
+    # Use BREAK to separate triggers from user prompt
+    # This prevents trigger syntax from bleeding into main prompt context too strongly
+    return f"{triggers_str} BREAK {prompt}"
+
+
+def build_compel_prompt(
+    prompt: str,
+    mode: PromptParser = PromptParser.LPW,
+    use_concatenation: bool = True
+) -> str:
+    """Build a Compel-ready prompt string, handling BREAK segments.
+
+    Args:
+        prompt: Raw prompt string (LPW or Compel syntax)
+        mode: Parsing mode (LPW or COMPEL)
+        use_concatenation: If True, joins BREAK segments with .and()
+
+    Returns:
+        Final Compel string (e.g. '("part1").and("part2")')
+    """
+    if mode == PromptParser.LPW:
+        # Normalize/Pre-process if needed (legacy function does nothing now but kept for safety)
+        prompt = normalize_grouped_weights(prompt)
+
+    # Split by BREAK
+    segments = re.split(r"\bBREAK\b", prompt, flags=re.IGNORECASE)
+
+    # Process segments
+    compel_segments = []
+    for s in segments:
+        s = s.strip()
+        if not s:
+            continue
+
+        if mode == PromptParser.LPW:
+            # Convert A1111 -> Compel
+            compel_segments.append(convert_a1111_to_compel(s))
+        else:
+            # Assume already Compel syntax
+            compel_segments.append(s)
+
+    if not compel_segments:
+        # Empty prompt
+        return '""'
+
+    if len(compel_segments) == 1:
+        return compel_segments[0]
+
+    if use_concatenation:
+        # Join with .and() syntax for Compel Conjunction
+        # Format: ("seg1").and("seg2").and("seg3")
+        # We need to quote the segments.
+        # But wait, our convert function returns strings that might contain quotes?
+        # Compel conversion does not introduce quotes currently.
+        # But user input might?
+        # Compel syntax uses quotes mainly for .and("...")
+        # Inside the string passed to compel(), usually we don't need quotes unless using .and()
+
+        # We need to escape double quotes if we are wrapping in double quotes
+        escaped_segments = [s.replace('"', r'\"') for s in compel_segments]
+        joined = '").and("'.join(escaped_segments)
+        return f'("{joined}")'
+    else:
+        # Just join with space? Or return list?
+        # Function signature says return str.
+        # If not using concatenation, maybe just space separated?
+        # But BREAK usually implies separation.
+        # Default fallback: space
+        return " ".join(compel_segments)
+
+
 def parse_prompt(prompt: str, mode: PromptParser = PromptParser.LPW) -> ParsedPrompt:
     """Parse prompt according to specified mode."""
     if mode == PromptParser.LPW:

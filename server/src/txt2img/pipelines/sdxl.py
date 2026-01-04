@@ -498,6 +498,28 @@ class SDXLPipeline(BasePipeline):
 
         return saved
 
+        if negative_prompt_embeds.shape[1] != prompt_embeds.shape[1]:
+            if negative_prompt_embeds.shape[1] < prompt_embeds.shape[1]:
+                padding = torch.zeros(
+                    1,
+                    prompt_embeds.shape[1] - negative_prompt_embeds.shape[1],
+                    negative_prompt_embeds.shape[2],
+                    device=negative_prompt_embeds.device,
+                    dtype=negative_prompt_embeds.dtype,
+                )
+                negative_prompt_embeds = torch.cat([negative_prompt_embeds, padding], dim=1)
+            else:
+                negative_prompt_embeds = negative_prompt_embeds[:, : prompt_embeds.shape[1], :]
+            logger.info(f"Padded negative embeddings: {negative_prompt_embeds.shape[1]} tokens")
+
+        return (
+            prompt_embeds,
+            negative_prompt_embeds,
+            pooled_prompt_embeds,
+            negative_pooled_prompt_embeds,
+            full_prompt,
+        )
+
     def _compute_embeddings_with_triggers(
         self,
         prompt: str,
@@ -521,11 +543,14 @@ class SDXLPipeline(BasePipeline):
                       pooled_prompt_embeds, negative_pooled_prompt_embeds,
                       full_prompt)  # full_prompt is the normalized prompt with triggers
         """
-        import re
-
         from compel import CompelForSDXL
 
-        from txt2img.core.prompt_parser import convert_a1111_to_compel, normalize_grouped_weights
+        # New refactored imports from utils
+        from txt2img.utils.prompt_parser import (
+            PromptParser,
+            build_compel_prompt,
+            prepend_triggers
+        )
 
         # Ensure text encoders are on GPU for Compel (fixes cpu_offload compatibility)
         # Use no_grad to avoid "requires_grad=True on inference tensor" error
@@ -540,59 +565,19 @@ class SDXLPipeline(BasePipeline):
         compel = CompelForSDXL(self.pipe)
 
         # Prepend trigger words to prompt if any (separated by BREAK)
-        full_prompt = prompt
-        if trigger_info:
-            trigger_parts = []
-            for trigger_words, weight in trigger_info:
-                if weight > 0:
-                    # Apply weight to trigger words
-                    compel_trigger = convert_a1111_to_compel(trigger_words)
-                    if weight != 1.0:
-                        trigger_parts.append(f"({compel_trigger}){weight}")
-                    else:
-                        trigger_parts.append(compel_trigger)
-            if trigger_parts:
-                triggers_str = ", ".join(trigger_parts)
-                # Use BREAK to separate triggers from user prompt
-                full_prompt = f"{triggers_str} BREAK {prompt}"
-                logger.info(f"Prepended triggers (BREAK-separated): {triggers_str}")
+        # Using generic helper
+        full_prompt = prepend_triggers(prompt, trigger_info)
 
-        # Normalize grouped weights: (a, b:1.2) -> (a:1.2), (b:1.2)
-        full_prompt = normalize_grouped_weights(full_prompt)
+        # Build Compel prompt (handles BREAK splitting, concatenation, and updates AST)
+        # Using generic helper
+        compel_prompt = build_compel_prompt(full_prompt, mode=PromptParser.LPW, use_concatenation=True)
 
-        # Split prompt by BREAK keyword and convert to Compel syntax
-        segments = re.split(r"\bBREAK\b", full_prompt, flags=re.IGNORECASE)
-        segments = [convert_a1111_to_compel(s.strip()) for s in segments if s.strip()]
-
-        if not segments:
-            segments = [""]
-
-        # Log parsed prompt segments
-        logger.info(f"Prompt segments (Compel format): {segments}")
-
-        # Join segments with .and() for concatenation
-        if len(segments) > 1:
-            compel_prompt = ").and(\"".join(segments)
-            compel_prompt = f'("{compel_prompt}")'
-            logger.info(f"Concatenated {len(segments)} BREAK segments")
-        else:
-            compel_prompt = segments[0]
+        if compel_prompt != prompt and compel_prompt != '""':
+            logger.info(f"Compel prompt: {compel_prompt[:100]}...")
 
         # Process negative prompt
         neg_prompt = negative_prompt or ""
-        neg_prompt = normalize_grouped_weights(neg_prompt)
-        neg_segments = re.split(r"\bBREAK\b", neg_prompt, flags=re.IGNORECASE)
-        neg_segments = [convert_a1111_to_compel(s.strip()) for s in neg_segments if s.strip()]
-
-        # Log negative prompt segments
-        if neg_segments:
-            logger.info(f"Negative prompt segments (Compel format): {neg_segments}")
-
-        if len(neg_segments) > 1:
-            compel_neg_prompt = ").and(\"".join(neg_segments)
-            compel_neg_prompt = f'("{compel_neg_prompt}")'
-        else:
-            compel_neg_prompt = neg_segments[0] if neg_segments else ""
+        compel_neg_prompt = build_compel_prompt(neg_prompt, mode=PromptParser.LPW, use_concatenation=True)
 
         # Generate conditioning using CompelForSDXL
         with torch.inference_mode():
@@ -604,6 +589,7 @@ class SDXLPipeline(BasePipeline):
         negative_pooled_prompt_embeds = conditioning.negative_pooled_embeds
 
         # Pad negative to match prompt length if needed
+        # (This logic remains here as it's tensor operations, unless we move it to tensor_utils later)
         if negative_prompt_embeds.shape[1] != prompt_embeds.shape[1]:
             if negative_prompt_embeds.shape[1] < prompt_embeds.shape[1]:
                 padding = torch.zeros(
