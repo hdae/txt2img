@@ -55,6 +55,8 @@ class SDXLPipeline(BasePipeline):
     def __init__(self) -> None:
         self.pipe: StableDiffusionXLPipeline | None = None
         self._model_name: str = ""
+        self.loaded_loras: list[str] = []  # All LoRAs loaded in memory
+        self.last_used_loras: set[str] = set()  # LoRAs used in last generation
 
     @property
     def model_name(self) -> str:
@@ -272,71 +274,93 @@ class SDXLPipeline(BasePipeline):
             self.pipe.vae.enable_slicing()
             logger.info("VRAM profile: LOWVRAM - model offload + VAE tiling/slicing")
 
-    async def load_loras(self, lora_configs: list) -> None:
-        """Load LoRA weights.
+    def _apply_loras(
+        self,
+        lora_requests: list[dict] | None,
+    ) -> tuple[list[dict], list[tuple[str, float]]]:
+        """Apply LoRAs for this generation.
+
+        Must be called BEFORE inference_mode to avoid requires_grad errors.
 
         Args:
-            lora_configs: List of LoraConfig objects
+            lora_requests: List of {"id": "...", "weight": 1.0, "trigger_weight": 0.5}
+
+        Returns:
+            Tuple of (applied_loras, trigger_info)
+            - applied_loras: List of {"name": "...", "weight": 1.0}
+            - trigger_info: List of (trigger_words, trigger_weight)
         """
-        if not self.pipe:
-            raise RuntimeError("Pipeline not loaded")
+        from txt2img.core.lora_manager import lora_manager
 
-        for lora_config in lora_configs:
-            ref = lora_config.ref.strip()
-            if not ref:
-                continue
+        applied_loras = []
+        trigger_info = []
 
-            logger.info(f"Loading LoRA: {ref}")
+        with torch.no_grad():  # Avoid InferenceMode error
+            # No LoRAs requested - disable all
+            if not lora_requests:
+                if self.loaded_loras:
+                    self.pipe.disable_lora()
+                    logger.info("Disabled all LoRAs")
+                return [], []
 
-            try:
-                lora_ref = parse_model_ref(ref)
+            # Load and apply requested LoRAs
+            for lora_req in lora_requests:
+                lora_id = lora_req.get("id") if isinstance(lora_req, dict) else lora_req
+                weight = lora_req.get("weight", 1.0) if isinstance(lora_req, dict) else 1.0
+                trigger_weight = (
+                    lora_req.get("trigger_weight", 0.5) if isinstance(lora_req, dict) else 0.5
+                )
 
-                if isinstance(lora_ref, AIRResource):
-                    if lora_ref.source == ModelSource.CIVITAI:
-                        lora_path = await civitai_download(lora_ref)
-                    else:
-                        raise ValueError(f"Unsupported LoRA source: {lora_ref.source}")
-                elif isinstance(lora_ref, URLResource):
-                    lora_path = await download_from_url(lora_ref)
-                else:
-                    raise ValueError(f"Unsupported LoRA reference type: {type(lora_ref)}")
+                lora_info = lora_manager.get_lora(lora_id)
+                if lora_info and lora_info.path:
+                    adapter_name = lora_info.path.stem
 
-                # Load LoRA weights
-                adapter_name = lora_path.stem
+                    # Load if not already loaded
+                    if adapter_name not in self.loaded_loras:
+                        self.pipe.load_lora_weights(
+                            str(lora_info.path.parent),
+                            weight_name=lora_info.path.name,
+                            adapter_name=adapter_name,
+                        )
+                        self.loaded_loras.append(adapter_name)
+                        logger.info(f"LoRA loaded: {adapter_name}")
 
-                # Suppress PEFT warnings during loading
-                import warnings
+                    applied_loras.append({"name": adapter_name, "weight": weight})
 
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="Already found a `peft_config`")
-                    warnings.filterwarnings(
-                        "ignore", message="Adapter .* was active which is now deleted"
-                    )
-                    self.pipe.load_lora_weights(
-                        str(lora_path.parent),
-                        weight_name=lora_path.name,
-                        adapter_name=adapter_name,
-                    )
-                self.loaded_loras.append(adapter_name)
-                logger.info(f"LoRA loaded: {adapter_name}")
+                    # Collect trigger words
+                    if lora_info.trigger_words and trigger_weight > 0:
+                        trigger_info.append((", ".join(lora_info.trigger_words), trigger_weight))
 
-            except RuntimeError:
-                # Handle incompatible LoRA (wrong architecture, size mismatch, etc.)
-                logger.warning(f"Failed to load LoRA {ref}: incompatible with model")
-                # Try to clean up partial adapter state
+            # Set adapter weights
+            if applied_loras:
+                adapter_names = [lora["name"] for lora in applied_loras]
+                adapter_weights = [lora["weight"] for lora in applied_loras]
+                self.pipe.set_adapters(adapter_names, adapter_weights)
+                logger.info(f"Applied LoRAs: {applied_loras}")
+        return applied_loras, trigger_info
+
+    def _cleanup_loras(self, applied_loras: list[dict]) -> None:
+        """Unload all LoRAs after generation.
+
+        This ensures a clean state for the next generation, avoiding
+        InferenceMode errors when set_adapters() calls requires_grad_(True).
+
+        Args:
+            applied_loras: List of LoRAs used in this generation
+        """
+        # Always unload all LoRAs to avoid InferenceMode issues
+        for lora in applied_loras:
+            adapter_name = lora["name"]
+            if adapter_name in self.loaded_loras:
                 try:
-                    if hasattr(self.pipe, "delete_adapters"):
-                        adapter_name = lora_path.stem if "lora_path" in dir() else None
-                        if adapter_name:
-                            import warnings
+                    self.pipe.delete_adapters(adapter_name)
+                    self.loaded_loras.remove(adapter_name)
+                    logger.info(f"Unloaded LoRA: {adapter_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to unload LoRA {adapter_name}: {e}")
 
-                            with warnings.catch_warnings():
-                                warnings.simplefilter("ignore")
-                                self.pipe.delete_adapters(adapter_name)
-                except Exception:
-                    pass
-            except Exception as e:
-                logger.warning(f"Failed to load LoRA {ref}: {e}")
+        self.last_used_loras = set()
+
 
     async def generate(
         self,
@@ -355,42 +379,8 @@ class SDXLPipeline(BasePipeline):
         if not self.pipe:
             raise RuntimeError("Pipeline not loaded")
 
-        # Handle LoRA application
-        from txt2img.core.lora_manager import lora_manager
-
-        applied_loras = []
-        trigger_info = []  # List of (trigger_words, trigger_weight)
-
-        if params.loras:
-            # Load and apply LoRAs for this generation
-            for lora_req in params.loras:
-                lora_id = lora_req.get("id") if isinstance(lora_req, dict) else lora_req
-                weight = lora_req.get("weight", 1.0) if isinstance(lora_req, dict) else 1.0
-                trigger_weight = (
-                    lora_req.get("trigger_weight", 0.5) if isinstance(lora_req, dict) else 0.5
-                )
-
-                lora_info = lora_manager.get_lora(lora_id)
-                if lora_info and lora_info.path:
-                    adapter_name = lora_info.path.stem
-                    self.pipe.load_lora_weights(
-                        str(lora_info.path.parent),
-                        weight_name=lora_info.path.name,
-                        adapter_name=adapter_name,
-                    )
-                    applied_loras.append({"name": adapter_name, "weight": weight})
-                    logger.info(f"LoRA loaded: {adapter_name}")
-
-                    # Collect trigger words for separate embedding
-                    if lora_info.trigger_words and trigger_weight > 0:
-                        trigger_info.append((", ".join(lora_info.trigger_words), trigger_weight))
-
-            # Set LoRA scales
-            if applied_loras:
-                adapter_names = [lora["name"] for lora in applied_loras]
-                adapter_weights = [lora["weight"] for lora in applied_loras]
-                self.pipe.set_adapters(adapter_names, adapter_weights)
-                logger.info(f"Applied LoRAs: {applied_loras}")
+        # Apply LoRAs (must be done before inference_mode)
+        applied_loras, trigger_info = self._apply_loras(params.loras)
 
         logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={SDXL_FIXED_STEPS}")
 
@@ -480,22 +470,8 @@ class SDXLPipeline(BasePipeline):
 
         saved = save_image(image, metadata)
 
-        # Track current LoRA usage and unload unused ones
-        current_loras = {lora["name"] for lora in applied_loras} if applied_loras else set()
-
-        if current_loras != self.last_used_loras:
-            # Unload LoRAs that were used last time but not this time
-            loras_to_unload = self.last_used_loras - current_loras
-            for adapter_name in loras_to_unload:
-                if adapter_name in self.loaded_loras:
-                    try:
-                        self.pipe.delete_adapters(adapter_name)
-                        self.loaded_loras.remove(adapter_name)
-                        logger.info(f"Unloaded LoRA: {adapter_name}")
-                    except Exception as e:
-                        logger.warning(f"Failed to unload LoRA {adapter_name}: {e}")
-
-            self.last_used_loras = current_loras
+        # Cleanup unused LoRAs
+        self._cleanup_loras(applied_loras)
 
         # Clear CUDA cache to release temporary VRAM
         torch.cuda.empty_cache()
