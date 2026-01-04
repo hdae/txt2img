@@ -48,7 +48,7 @@ export const NegativePrompt = () => {
             <CodeMirror
                 value={negativePrompt}
                 onChange={setNegativePrompt}
-                height="80px"
+                minHeight="60px"
                 placeholder="避けたい要素..."
                 theme={radixDarkTheme}
                 extensions={extensions}

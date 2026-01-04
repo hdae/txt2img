@@ -539,7 +539,7 @@ class SDXLPipeline(BasePipeline):
         # Use CompelForSDXL (new non-deprecated API)
         compel = CompelForSDXL(self.pipe)
 
-        # Prepend trigger words to prompt if any
+        # Prepend trigger words to prompt if any (separated by BREAK)
         full_prompt = prompt
         if trigger_info:
             trigger_parts = []
@@ -553,8 +553,9 @@ class SDXLPipeline(BasePipeline):
                         trigger_parts.append(compel_trigger)
             if trigger_parts:
                 triggers_str = ", ".join(trigger_parts)
-                full_prompt = f"{triggers_str}, {prompt}"
-                logger.info(f"Prepended triggers to prompt: {triggers_str}")
+                # Use BREAK to separate triggers from user prompt
+                full_prompt = f"{triggers_str} BREAK {prompt}"
+                logger.info(f"Prepended triggers (BREAK-separated): {triggers_str}")
 
         # Normalize grouped weights: (a, b:1.2) -> (a:1.2), (b:1.2)
         full_prompt = normalize_grouped_weights(full_prompt)

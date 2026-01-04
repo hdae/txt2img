@@ -59,7 +59,6 @@ export const PromptEditor = () => {
                 value={prompt}
                 onChange={setPrompt}
                 minHeight="80px"
-                maxHeight="300px"
                 placeholder="プロンプトを入力..."
                 theme={radixDarkTheme}
                 extensions={extensions}

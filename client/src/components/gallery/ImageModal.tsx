@@ -17,13 +17,19 @@ interface ImageModalProps {
 }
 
 // Parse prompt tags with weights (e.g., "(tag:1.2)" or "tag")
-function parsePromptTags(prompt: string): { tag: string; weight: number }[] {
-    const results: { tag: string; weight: number }[] = []
+function parsePromptTags(prompt: string): { tag: string; weight: number; isBreak?: boolean }[] {
+    const results: { tag: string; weight: number; isBreak?: boolean }[] = []
 
-    // Split by comma and process each part
-    const parts = prompt.split(",").map((p) => p.trim()).filter(Boolean)
+    // Split by comma or newline and process each part
+    const parts = prompt.split(/[,\n]/).map((p) => p.trim()).filter(Boolean)
 
     for (const part of parts) {
+        // Check for BREAK keyword
+        if (part.toUpperCase() === "BREAK") {
+            results.push({ tag: "BREAK", weight: 1.0, isBreak: true })
+            continue
+        }
+
         // Match (text:weight) pattern
         const weightMatch = part.match(/^\((.+):(\d+\.?\d*)\)$/)
         if (weightMatch) {
@@ -53,6 +59,17 @@ function parsePromptTags(prompt: string): { tag: string; weight: number }[] {
     return results
 }
 
+// Get badge color based on weight (gradual 0.1 steps)
+function getWeightColor(weight: number): "violet" | "purple" | "plum" | "gray" | "bronze" | "amber" | undefined {
+    if (weight >= 1.5) return "violet"      // Very high
+    if (weight >= 1.3) return "purple"      // High
+    if (weight >= 1.1) return "plum"        // Slightly high
+    if (weight <= 0.5) return "bronze"      // Very low
+    if (weight <= 0.7) return "gray"        // Low
+    if (weight <= 0.9) return "amber"       // Slightly low
+    return undefined                         // Normal (1.0)
+}
+
 // Metadata content component (must be outside render)
 const MetadataContent = ({
     promptTags,
@@ -64,8 +81,8 @@ const MetadataContent = ({
     width,
     height,
 }: {
-    promptTags: { tag: string; weight: number }[]
-    negativeTags: { tag: string; weight: number }[]
+    promptTags: { tag: string; weight: number; isBreak?: boolean }[]
+    negativeTags: { tag: string; weight: number; isBreak?: boolean }[]
     modelName?: string
     seed?: number
     steps?: number
@@ -85,11 +102,11 @@ const MetadataContent = ({
                         <Badge
                             key={i}
                             size="1"
-                            variant={item.weight !== 1.0 ? "solid" : "soft"}
-                            color={item.weight > 1.0 ? "violet" : item.weight < 1.0 ? "gray" : undefined}
+                            variant={item.isBreak ? "solid" : item.weight !== 1.0 ? "solid" : "soft"}
+                            color={item.isBreak ? "orange" : getWeightColor(item.weight)}
                         >
                             {item.tag}
-                            {item.weight !== 1.0 && (
+                            {item.weight !== 1.0 && !item.isBreak && (
                                 <Text size="1" color="gray" ml="1">
                                     {item.weight.toFixed(2)}
                                 </Text>
