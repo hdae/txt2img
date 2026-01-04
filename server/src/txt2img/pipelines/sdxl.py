@@ -55,8 +55,6 @@ class SDXLPipeline(BasePipeline):
     def __init__(self) -> None:
         self.pipe: StableDiffusionXLPipeline | None = None
         self._model_name: str = ""
-        self.loaded_loras: list[str] = []  # All LoRAs loaded in memory
-        self.last_used_loras: set[str] = set()  # LoRAs used in last generation
 
     @property
     def model_name(self) -> str:
@@ -364,7 +362,7 @@ class SDXLPipeline(BasePipeline):
         trigger_info = []  # List of (trigger_words, trigger_weight)
 
         if params.loras:
-            # Collect trigger info and apply LoRAs
+            # Load and apply LoRAs for this generation
             for lora_req in params.loras:
                 lora_id = lora_req.get("id") if isinstance(lora_req, dict) else lora_req
                 weight = lora_req.get("weight", 1.0) if isinstance(lora_req, dict) else 1.0
@@ -374,35 +372,25 @@ class SDXLPipeline(BasePipeline):
 
                 lora_info = lora_manager.get_lora(lora_id)
                 if lora_info and lora_info.path:
-                    # Load LoRA if not already loaded
                     adapter_name = lora_info.path.stem
-                    if adapter_name not in self.loaded_loras:
-                        self.pipe.load_lora_weights(
-                            str(lora_info.path.parent),
-                            weight_name=lora_info.path.name,
-                            adapter_name=adapter_name,
-                        )
-                        self.loaded_loras.append(adapter_name)
-                        logger.info(f"LoRA loaded: {adapter_name}")
-
+                    self.pipe.load_lora_weights(
+                        str(lora_info.path.parent),
+                        weight_name=lora_info.path.name,
+                        adapter_name=adapter_name,
+                    )
                     applied_loras.append({"name": adapter_name, "weight": weight})
+                    logger.info(f"LoRA loaded: {adapter_name}")
 
                     # Collect trigger words for separate embedding
                     if lora_info.trigger_words and trigger_weight > 0:
                         trigger_info.append((", ".join(lora_info.trigger_words), trigger_weight))
 
-            # Set LoRA scales for requested LoRAs only
+            # Set LoRA scales
             if applied_loras:
                 adapter_names = [lora["name"] for lora in applied_loras]
                 adapter_weights = [lora["weight"] for lora in applied_loras]
-                self.pipe.enable_lora()  # Re-enable in case it was disabled
                 self.pipe.set_adapters(adapter_names, adapter_weights)
                 logger.info(f"Applied LoRAs: {applied_loras}")
-        else:
-            # No LoRAs requested - disable all adapters
-            if self.loaded_loras:
-                self.pipe.disable_lora()
-                logger.info("Disabled all LoRA adapters (none requested)")
 
         logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={SDXL_FIXED_STEPS}")
 
@@ -422,6 +410,7 @@ class SDXLPipeline(BasePipeline):
             negative_prompt_embeds,
             pooled_prompt_embeds,
             negative_pooled_prompt_embeds,
+            full_prompt,  # Normalized prompt with triggers for metadata
         ) = self._compute_embeddings_with_triggers(
             params.prompt,
             params.negative_prompt,
@@ -474,15 +463,10 @@ class SDXLPipeline(BasePipeline):
 
         image: Image.Image = result.images[0]
 
-        # Save image with metadata (include trigger info in saved prompt)
-        saved_prompt = params.prompt
-        if trigger_info:
-            triggers_str = ", ".join([t[0] for t in trigger_info])
-            saved_prompt = f"[Triggers: {triggers_str}] {params.prompt}"
-
+        # Save metadata with the actual normalized prompt (includes triggers)
         lora_names = [lora["name"] for lora in applied_loras] if applied_loras else None
         metadata = ImageMetadata(
-            prompt=saved_prompt,
+            prompt=full_prompt,
             negative_prompt=params.negative_prompt,
             seed=seed,
             steps=SDXL_FIXED_STEPS,
@@ -523,7 +507,7 @@ class SDXLPipeline(BasePipeline):
         prompt: str,
         negative_prompt: str,
         trigger_info: list[tuple[str, float]],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, str]:
         """Compute embeddings with BREAK segment support and LPW->Compel conversion.
 
         Supports both LPW (A1111) and Compel syntax in a unified way:
@@ -538,20 +522,23 @@ class SDXLPipeline(BasePipeline):
 
         Returns:
             Tuple of (prompt_embeds, negative_prompt_embeds,
-                      pooled_prompt_embeds, negative_pooled_prompt_embeds)
+                      pooled_prompt_embeds, negative_pooled_prompt_embeds,
+                      full_prompt)  # full_prompt is the normalized prompt with triggers
         """
         import re
 
         from compel import CompelForSDXL
 
-        from txt2img.core.prompt_parser import convert_a1111_to_compel
+        from txt2img.core.prompt_parser import convert_a1111_to_compel, normalize_grouped_weights
 
         # Ensure text encoders are on GPU for Compel (fixes cpu_offload compatibility)
+        # Use no_grad to avoid "requires_grad=True on inference tensor" error
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        if hasattr(self.pipe, "text_encoder") and self.pipe.text_encoder is not None:
-            self.pipe.text_encoder = self.pipe.text_encoder.to(device)
-        if hasattr(self.pipe, "text_encoder_2") and self.pipe.text_encoder_2 is not None:
-            self.pipe.text_encoder_2 = self.pipe.text_encoder_2.to(device)
+        with torch.no_grad():
+            if hasattr(self.pipe, "text_encoder") and self.pipe.text_encoder is not None:
+                self.pipe.text_encoder = self.pipe.text_encoder.to(device)
+            if hasattr(self.pipe, "text_encoder_2") and self.pipe.text_encoder_2 is not None:
+                self.pipe.text_encoder_2 = self.pipe.text_encoder_2.to(device)
 
         # Use CompelForSDXL (new non-deprecated API)
         compel = CompelForSDXL(self.pipe)
@@ -573,12 +560,18 @@ class SDXLPipeline(BasePipeline):
                 full_prompt = f"{triggers_str}, {prompt}"
                 logger.info(f"Prepended triggers to prompt: {triggers_str}")
 
+        # Normalize grouped weights: (a, b:1.2) -> (a:1.2), (b:1.2)
+        full_prompt = normalize_grouped_weights(full_prompt)
+
         # Split prompt by BREAK keyword and convert to Compel syntax
         segments = re.split(r"\bBREAK\b", full_prompt, flags=re.IGNORECASE)
         segments = [convert_a1111_to_compel(s.strip()) for s in segments if s.strip()]
 
         if not segments:
             segments = [""]
+
+        # Log parsed prompt segments
+        logger.info(f"Prompt segments (Compel format): {segments}")
 
         # Join segments with .and() for concatenation
         if len(segments) > 1:
@@ -590,8 +583,13 @@ class SDXLPipeline(BasePipeline):
 
         # Process negative prompt
         neg_prompt = negative_prompt or ""
+        neg_prompt = normalize_grouped_weights(neg_prompt)
         neg_segments = re.split(r"\bBREAK\b", neg_prompt, flags=re.IGNORECASE)
         neg_segments = [convert_a1111_to_compel(s.strip()) for s in neg_segments if s.strip()]
+
+        # Log negative prompt segments
+        if neg_segments:
+            logger.info(f"Negative prompt segments (Compel format): {neg_segments}")
 
         if len(neg_segments) > 1:
             compel_neg_prompt = ").and(\"".join(neg_segments)
@@ -628,4 +626,5 @@ class SDXLPipeline(BasePipeline):
             negative_prompt_embeds,
             pooled_prompt_embeds,
             negative_pooled_prompt_embeds,
+            full_prompt,
         )
