@@ -23,13 +23,15 @@ class LoraRequest(BaseModel):
 class GenerateRequest(BaseModel):
     """Request body for image generation.
 
-    Note: steps, cfg_scale, sampler are fixed per pipeline and not configurable.
+    Note: steps are fixed per pipeline. cfg_scale and sampler can be adjusted.
     """
 
     prompt: str = Field(description="Positive prompt")
     negative_prompt: str = Field(default="", description="Negative prompt (SDXL only)")
     width: int = Field(default=1024, ge=256, le=2048, description="Image width")
     height: int = Field(default=1024, ge=256, le=2048, description="Image height")
+    cfg_scale: float = Field(default=7.0, ge=0.0, le=15.0, description="CFG Scale (prompt adherence)")
+    sampler: str = Field(default="euler_a", description="Sampling method")
     seed: int | None = Field(default=None, description="Random seed (null for random)")
     loras: list[LoraRequest] | None = Field(default=None, description="LoRAs to apply (SDXL only)")
 

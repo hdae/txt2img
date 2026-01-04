@@ -1,15 +1,17 @@
 /**
- * GenerateTab - Main generation interface with 2-column layout for PC
+ * GenerateTab - Main generation interface with responsive layout
  */
 
 import { Box, Button, Flex, Grid, Spinner, Text } from "@radix-ui/themes"
 import { Sparkles } from "lucide-react"
 
+import { CfgScaleSlider } from "@/components/generate/CfgScaleSlider"
 import { LoraSelector } from "@/components/generate/LoraSelector"
 import { NegativePrompt } from "@/components/generate/NegativePrompt"
 import { ProgressView } from "@/components/generate/ProgressView"
 import { PromptEditor } from "@/components/generate/PromptEditor"
 import { ResultView } from "@/components/generate/ResultView"
+import { SamplerSelector } from "@/components/generate/SamplerSelector"
 import { SeedInput } from "@/components/generate/SeedInput"
 import { SizeSelector } from "@/components/generate/SizeSelector"
 import { useGenerate } from "@/hooks/useGenerate"
@@ -21,6 +23,8 @@ export const GenerateTab = () => {
 
     const isSDXL = serverInfo?.parameter_schema?.model_type === "sdxl"
     const hasNegativePrompt = serverInfo?.parameter_schema?.properties?.negative_prompt !== undefined
+    const hasSampler = serverInfo?.parameter_schema?.properties?.sampler !== undefined
+    const hasCfgScale = serverInfo?.parameter_schema?.properties?.cfg_scale !== undefined
 
     // Disable button until completed or failed (or idle)
     const isButtonDisabled = job.status === "queued" || job.status === "processing"
@@ -39,25 +43,23 @@ export const GenerateTab = () => {
             columns={{ initial: "1", md: "3fr 2fr" }}
             gap="4"
         >
-            {/* Left Column: Input (larger) */}
+            {/* Left Column: Input */}
             <Flex direction="column" gap="4">
                 {/* Prompt */}
                 <PromptEditor />
 
-                {/* Negative Prompt (SDXL only) */}
+                {/* Negative Prompt (if supported) */}
                 {hasNegativePrompt && <NegativePrompt />}
 
-                {/* Size & Seed */}
-                <Flex gap="4" wrap="wrap">
-                    <Box style={{ flex: 1, minWidth: 180 }}>
-                        <SizeSelector trainingResolution={parseInt(serverInfo?.training_resolution || "1024")} />
-                    </Box>
-                    <Box style={{ flex: 1, minWidth: 180 }}>
-                        <SeedInput />
-                    </Box>
-                </Flex>
+                {/* Settings: スマホ1列、タブレット2列、PC4列 */}
+                <Grid columns={{ initial: "1", sm: "2", lg: "4" }} gap="3">
+                    {hasSampler && <SamplerSelector />}
+                    {hasCfgScale && <CfgScaleSlider />}
+                    <SizeSelector trainingResolution={parseInt(serverInfo?.training_resolution || "1024")} />
+                    <SeedInput />
+                </Grid>
 
-                {/* Generate Button (between Size/Seed and LoRA) */}
+                {/* Generate Button */}
                 <Button
                     size="3"
                     onClick={generate}

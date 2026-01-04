@@ -59,6 +59,9 @@ export function GenerateProvider({ children }: GenerateProviderProps) {
     } = useGenerateStore()
 
     const generate = useCallback(async () => {
+        // Immediately set to queued to prevent double-click
+        updateJobStatus("queued")
+
         // Cleanup previous SSE connection
         cleanupRef.current?.()
 
@@ -78,6 +81,8 @@ export function GenerateProvider({ children }: GenerateProviderProps) {
             negative_prompt: currentForm.negativePrompt || undefined,
             width: currentForm.width,
             height: currentForm.height,
+            cfg_scale: currentForm.cfgScale,
+            sampler: currentForm.sampler,
             seed: seedToUse,
             loras: currentForm.loras.length > 0 ? currentForm.loras : undefined,
         }

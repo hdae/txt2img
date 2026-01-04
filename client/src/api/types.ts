@@ -18,6 +18,8 @@ export interface GenerateRequest {
     negative_prompt?: string
     width?: number
     height?: number
+    cfg_scale?: number
+    sampler?: string
     seed?: number | null
     loras?: LoraRequest[] | null
 }
@@ -74,6 +76,8 @@ interface PropertySchema {
     description?: string
     minimum?: number
     maximum?: number
+    step?: number
+    enum?: string[]
     items?: {
         type: string
         properties?: Record<string, PropertySchema>
@@ -84,11 +88,14 @@ interface PropertySchema {
 export interface ParameterSchema {
     model_type: ModelType
     prompt_style: PromptStyle
+    defaults: {
+        cfg_scale: number
+        sampler: string
+        steps: number
+    }
     properties: Record<string, PropertySchema>
     required: string[]
     fixed: {
         steps: number
-        cfg_scale: number
-        sampler?: string
     }
 }

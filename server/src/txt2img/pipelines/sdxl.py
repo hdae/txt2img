@@ -45,8 +45,7 @@ SCHEDULERS = {
 
 # Fixed generation parameters for SDXL
 SDXL_FIXED_STEPS = 20
-SDXL_FIXED_CFG_SCALE = 7.0
-SDXL_FIXED_SAMPLER = "euler_a"
+
 
 
 class SDXLPipeline(BasePipeline):
@@ -65,9 +64,18 @@ class SDXLPipeline(BasePipeline):
 
     def get_parameter_schema(self) -> dict[str, Any]:
         """Get JSON Schema for SDXL generation parameters."""
+        # Get defaults from ModelConfig
+        config = get_model_config()
+
         return {
             "model_type": "sdxl",
             "prompt_style": "tags",
+            # Easy access to defaults from config
+            "defaults": {
+                "cfg_scale": config.default_cfg,
+                "sampler": config.default_sampler,
+                "steps": config.default_steps,
+            },
             "properties": {
                 "prompt": {
                     "type": "string",
@@ -89,6 +97,20 @@ class SDXLPipeline(BasePipeline):
                     "default": 1024,
                     "minimum": 256,
                     "maximum": 2048,
+                },
+                "cfg_scale": {
+                    "type": "number",
+                    "default": config.default_cfg,
+                    "minimum": 0,
+                    "maximum": 15,
+                    "step": 0.5,
+                    "description": "CFG Scale (prompt adherence)",
+                },
+                "sampler": {
+                    "type": "string",
+                    "default": config.default_sampler,
+                    "enum": ["euler", "euler_a", "dpm++_2m"],
+                    "description": "Sampling method",
                 },
                 "seed": {
                     "type": ["integer", "null"],
@@ -122,9 +144,7 @@ class SDXLPipeline(BasePipeline):
             },
             "required": ["prompt"],
             "fixed": {
-                "steps": SDXL_FIXED_STEPS,
-                "cfg_scale": SDXL_FIXED_CFG_SCALE,
-                "sampler": SDXL_FIXED_SAMPLER,
+                "steps": config.default_steps,
             },
         }
 
@@ -384,10 +404,10 @@ class SDXLPipeline(BasePipeline):
 
         logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={SDXL_FIXED_STEPS}")
 
-        # Set scheduler (fixed)
-        scheduler_class = SCHEDULERS.get(SDXL_FIXED_SAMPLER, EulerAncestralDiscreteScheduler)
+        # Set scheduler from params
+        scheduler_class = SCHEDULERS.get(params.sampler, EulerAncestralDiscreteScheduler)
         self.pipe.scheduler = scheduler_class.from_config(self.pipe.scheduler.config)
-        logger.info(f"Scheduler set: {SDXL_FIXED_SAMPLER}")
+        logger.info(f"Scheduler set: {params.sampler}")
 
         # Determine seed
         seed = params.seed if params.seed is not None else random.randint(0, 2**32 - 1)
@@ -440,7 +460,7 @@ class SDXLPipeline(BasePipeline):
                     "width": params.width,
                     "height": params.height,
                     "num_inference_steps": SDXL_FIXED_STEPS,
-                    "guidance_scale": SDXL_FIXED_CFG_SCALE,
+                    "guidance_scale": params.cfg_scale,
                     "generator": generator,
                 }
                 if step_callback:
@@ -460,10 +480,10 @@ class SDXLPipeline(BasePipeline):
             negative_prompt=params.negative_prompt,
             seed=seed,
             steps=SDXL_FIXED_STEPS,
-            cfg_scale=SDXL_FIXED_CFG_SCALE,
+            cfg_scale=params.cfg_scale,
             width=params.width,
             height=params.height,
-            sampler=SDXL_FIXED_SAMPLER,
+            sampler=params.sampler,
             model_name=self.model_name,
             loras=lora_names,
         )

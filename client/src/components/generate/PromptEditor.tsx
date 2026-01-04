@@ -3,10 +3,11 @@
  */
 
 import { EditorView } from "@codemirror/view"
-import { Box, Text } from "@radix-ui/themes"
+import { Box, Flex, Text } from "@radix-ui/themes"
 import CodeMirror from "@uiw/react-codemirror"
 import { useEffect, useMemo } from "react"
 
+import { FieldResetButton } from "@/components/generate/FieldResetButton"
 import { useGenerate } from "@/hooks/useGenerate"
 import { useServerInfo } from "@/hooks/useServerInfo"
 import { getPromptEditorExtensions, setOnGenerateCallback } from "@/lib/codemirror-keymap"
@@ -48,13 +49,17 @@ export const PromptEditor = () => {
 
     return (
         <Box>
-            <Text as="label" size="2" weight="medium" mb="1" style={{ display: "block" }}>
-                プロンプト
-            </Text>
+            <Flex align="center" gap="2" mb="1">
+                <Text as="label" size="2" weight="medium">
+                    プロンプト
+                </Text>
+                <FieldResetButton fieldName="プロンプト" onReset={() => setPrompt("")} />
+            </Flex>
             <CodeMirror
                 value={prompt}
                 onChange={setPrompt}
-                height="120px"
+                minHeight="80px"
+                maxHeight="300px"
                 placeholder="プロンプトを入力..."
                 theme={radixDarkTheme}
                 extensions={extensions}

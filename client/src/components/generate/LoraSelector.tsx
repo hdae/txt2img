@@ -11,6 +11,7 @@ import {
     Card,
     Dialog,
     Flex,
+    Grid,
     IconButton,
     RadioCards,
     Slider,
@@ -148,8 +149,8 @@ export const LoraSelector = ({ loras }: LoraSelectorProps) => {
                                     </IconButton>
                                 </Flex>
 
-                                <Flex gap="4">
-                                    <Box style={{ flex: 1 }}>
+                                <Grid columns={{ initial: "1", sm: "2" }} gap="3">
+                                    <Box>
                                         <Flex justify="between" mb="1">
                                             <Text size="1" color="gray">Weight</Text>
                                             <Text size="1" color="gray">{(selected.weight ?? 1.0).toFixed(1)}</Text>
@@ -163,7 +164,7 @@ export const LoraSelector = ({ loras }: LoraSelectorProps) => {
                                             size="1"
                                         />
                                     </Box>
-                                    <Box style={{ flex: 1 }}>
+                                    <Box>
                                         <Flex justify="between" mb="1">
                                             <Text size="1" color="gray">Trigger</Text>
                                             <Text size="1" color="gray">{(selected.trigger_weight ?? 0.5).toFixed(1)}</Text>
@@ -177,7 +178,7 @@ export const LoraSelector = ({ loras }: LoraSelectorProps) => {
                                             size="1"
                                         />
                                     </Box>
-                                </Flex>
+                                </Grid>
                             </Flex>
                         </Card>
                     )

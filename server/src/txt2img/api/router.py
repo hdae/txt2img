@@ -54,6 +54,8 @@ async def generate_image(request: GenerateRequest) -> GenerateResponse:
         negative_prompt=request.negative_prompt,
         width=request.width,
         height=request.height,
+        cfg_scale=request.cfg_scale,
+        sampler=request.sampler,
         seed=request.seed,
         loras=loras_list,
     )

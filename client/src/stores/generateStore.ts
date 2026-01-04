@@ -14,8 +14,11 @@ import type { LoraRequest, ParameterSchema } from "@/api/types"
 interface GenerateFormState {
     prompt: string
     negativePrompt: string
-    width: number
-    height: number
+    aspectRatio: string  // "1:1", "3:4", etc. - persisted
+    width: number  // Not persisted, calculated from aspectRatio + trainingResolution
+    height: number  // Not persisted
+    cfgScale: number  // Not persisted, use schema default
+    sampler: string  // Not persisted, use schema default
     seed: number | null
     seedLocked: boolean
     loras: LoraRequest[]
@@ -51,6 +54,9 @@ interface GenerateStore {
     setWidth: (width: number) => void
     setHeight: (height: number) => void
     setSize: (width: number, height: number) => void
+    setAspectRatio: (aspectRatio: string) => void
+    setCfgScale: (cfgScale: number) => void
+    setSampler: (sampler: string) => void
     setSeed: (seed: number | null) => void
     toggleSeedLocked: () => void
     addLora: (lora: LoraRequest) => void
@@ -77,8 +83,11 @@ interface GenerateStore {
 const defaultForm: GenerateFormState = {
     prompt: "",
     negativePrompt: "",
+    aspectRatio: "1:1",
     width: 1024,
     height: 1024,
+    cfgScale: 7.0,
+    sampler: "euler_a",
     seed: null,
     seedLocked: false,
     loras: [],
@@ -139,6 +148,21 @@ export const useGenerateStore = create<GenerateStore>()(
                     state.form.seed = seed
                 }),
 
+            setAspectRatio: (aspectRatio) =>
+                set((state) => {
+                    state.form.aspectRatio = aspectRatio
+                }),
+
+            setCfgScale: (cfgScale) =>
+                set((state) => {
+                    state.form.cfgScale = cfgScale
+                }),
+
+            setSampler: (sampler) =>
+                set((state) => {
+                    state.form.sampler = sampler
+                }),
+
             toggleSeedLocked: () =>
                 set((state) => {
                     state.form.seedLocked = !state.form.seedLocked
@@ -180,10 +204,15 @@ export const useGenerateStore = create<GenerateStore>()(
 
             resetForm: (schema) =>
                 set((state) => {
+                    const cfgDefault = (schema?.properties?.cfg_scale?.default as number) ?? 7.0
+                    const samplerDefault = (schema?.properties?.sampler?.default as string) ?? "euler_a"
                     state.form = {
                         ...defaultForm,
+                        aspectRatio: state.form.aspectRatio, // Keep current aspect ratio
                         width: (schema?.properties.width?.default as number) ?? 1024,
                         height: (schema?.properties.height?.default as number) ?? 1024,
+                        cfgScale: cfgDefault,
+                        sampler: samplerDefault,
                     }
                 }),
 
@@ -236,7 +265,19 @@ export const useGenerateStore = create<GenerateStore>()(
         })),
         {
             name: "txt2img-generate-form",
-            partialize: (state) => ({ form: state.form }),
+            partialize: (state) => ({
+                form: {
+                    // Persist user preferences
+                    prompt: state.form.prompt,
+                    negativePrompt: state.form.negativePrompt,
+                    aspectRatio: state.form.aspectRatio,
+                    cfgScale: state.form.cfgScale,
+                    sampler: state.form.sampler,
+                    seedLocked: state.form.seedLocked,
+                    seed: state.form.seedLocked ? state.form.seed : null,
+                    loras: state.form.loras,
+                }
+            }),
         }
     )
 )

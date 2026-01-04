@@ -2,7 +2,7 @@
  * SeedInput - Seed with lock toggle
  */
 
-import { Box, Flex, Switch, Text, TextField } from "@radix-ui/themes"
+import { Flex, Switch, Text, TextField } from "@radix-ui/themes"
 
 import { useGenerateStore } from "@/stores/generateStore"
 
@@ -24,8 +24,8 @@ export const SeedInput = () => {
     }
 
     return (
-        <Box>
-            <Flex justify="between" align="center" mb="2">
+        <Flex direction="column" justify="between" style={{ height: 60 }}>
+            <Flex justify="between" align="center">
                 <Text as="label" size="2" weight="medium">
                     シード
                 </Text>
@@ -47,6 +47,6 @@ export const SeedInput = () => {
                 type="number"
                 disabled={!seedLocked}
             />
-        </Box>
+        </Flex>
     )
 }

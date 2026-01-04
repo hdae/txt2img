@@ -3,10 +3,11 @@
  */
 
 import { EditorView } from "@codemirror/view"
-import { Box, Text } from "@radix-ui/themes"
+import { Box, Flex, Text } from "@radix-ui/themes"
 import CodeMirror from "@uiw/react-codemirror"
 import { useMemo } from "react"
 
+import { FieldResetButton } from "@/components/generate/FieldResetButton"
 import { useServerInfo } from "@/hooks/useServerInfo"
 import { getPromptEditorExtensions } from "@/lib/codemirror-keymap"
 import { radixDarkTheme, thickCaretStyle } from "@/lib/codemirror-theme"
@@ -38,9 +39,12 @@ export const NegativePrompt = () => {
 
     return (
         <Box>
-            <Text as="label" size="2" weight="medium" mb="1" style={{ display: "block" }}>
-                ネガティブプロンプト
-            </Text>
+            <Flex align="center" gap="2" mb="1">
+                <Text as="label" size="2" weight="medium">
+                    ネガティブプロンプト
+                </Text>
+                <FieldResetButton fieldName="ネガティブプロンプト" onReset={() => setNegativePrompt("")} />
+            </Flex>
             <CodeMirror
                 value={negativePrompt}
                 onChange={setNegativePrompt}

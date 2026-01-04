@@ -24,6 +24,6 @@
     ],
     "training_resolution": 1024,
     "default_steps": 20,
-    "default_cfg": 7.0,
+    "default_cfg": 5.0,
     "default_sampler": "euler_a"
 }

@@ -24,13 +24,15 @@ class JobStatus(str, Enum):
 class GenerationParams:
     """Parameters for image generation.
 
-    Note: steps, cfg_scale, sampler are fixed per pipeline.
+    Note: steps are fixed per pipeline. cfg_scale and sampler can be adjusted.
     """
 
     prompt: str
     negative_prompt: str = ""
     width: int = 1024
     height: int = 1024
+    cfg_scale: float = 7.0
+    sampler: str = "euler_a"
     seed: int | None = None
     loras: list[dict] | None = None  # [{"id": "...", "weight": 1.0}]
 
