@@ -26,6 +26,70 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+def normalize_grouped_weights(prompt: str) -> str:
+    """Normalize grouped weight syntax to individual weights.
+
+    Converts: (tag1, tag2, tag3:1.2) -> (tag1:1.2), (tag2:1.2), (tag3:1.2)
+
+    This handles the LPW-style grouped weight syntax that is NOT supported
+    by Compel, converting it to individual weighted tags.
+
+    Args:
+        prompt: Raw prompt string with potentially grouped weights
+
+    Returns:
+        Normalized prompt with individual weights
+    """
+    # Pattern: (content:weight) where content contains commas
+    # We need to match balanced parentheses with explicit weight
+    result = []
+    i = 0
+
+    while i < len(prompt):
+        if prompt[i] == "(":
+            # Find matching close paren
+            depth = 1
+            j = i + 1
+            while j < len(prompt) and depth > 0:
+                if prompt[j] == "(":
+                    depth += 1
+                elif prompt[j] == ")":
+                    depth -= 1
+                j += 1
+
+            if depth == 0:
+                inner = prompt[i + 1 : j - 1]
+
+                # Check if it's an explicit weight: (content:weight)
+                weight_match = re.match(r"^(.+):(-?[0-9.]+)$", inner)
+                if weight_match:
+                    content = weight_match.group(1).strip()
+                    weight = weight_match.group(2)
+
+                    # Check if content has commas (grouped tags)
+                    if "," in content:
+                        # Split by comma and apply weight to each
+                        tags = [t.strip() for t in content.split(",") if t.strip()]
+                        weighted_tags = [f"({tag}:{weight})" for tag in tags]
+                        result.append(", ".join(weighted_tags))
+                    else:
+                        # Single tag with weight, keep as is
+                        result.append(prompt[i:j])
+                else:
+                    # No explicit weight, check for nested emphasis like ((content))
+                    # These don't need normalization, keep as is
+                    result.append(prompt[i:j])
+
+                i = j
+                continue
+
+        # Regular character
+        result.append(prompt[i])
+        i += 1
+
+    return "".join(result)
+
+
 class PromptParser(str, Enum):
     """Prompt parser mode."""
 
@@ -245,6 +309,9 @@ def parse_lpw_prompt(prompt: str) -> ParsedPrompt:
     Returns:
         ParsedPrompt with Compel-converted chunks
     """
+    # First, normalize grouped weights: (a, b:1.2) -> (a:1.2), (b:1.2)
+    prompt = normalize_grouped_weights(prompt)
+
     # Split by BREAK
     raw_chunks = re.split(r"\bBREAK\b", prompt, flags=re.IGNORECASE)
 
