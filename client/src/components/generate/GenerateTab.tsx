@@ -53,9 +53,9 @@ export const GenerateTab = () => {
 
                 {/* Settings: スマホ1列、タブレット2列、PC4列 */}
                 <Grid columns={{ initial: "1", sm: "2", lg: "4" }} gap="3">
+                    <SizeSelector trainingResolution={parseInt(serverInfo?.training_resolution || "1024")} />
                     {hasSampler && <SamplerSelector />}
                     {hasCfgScale && <CfgScaleSlider />}
-                    <SizeSelector trainingResolution={parseInt(serverInfo?.training_resolution || "1024")} />
                     <SeedInput />
                 </Grid>
 
