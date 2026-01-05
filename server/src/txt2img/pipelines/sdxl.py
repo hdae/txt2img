@@ -170,10 +170,8 @@ class SDXLPipeline(BasePipeline):
         # Enable memory optimizations
         self.pipe.vae.enable_slicing()
 
-        # Disable VAE upcast to float32 (saves VRAM, prevents spikes)
-        if hasattr(self.pipe.vae.config, "force_upcast"):
-            self.pipe.vae.config.force_upcast = False
-            logger.info("VAE force_upcast disabled")
+        # Note: force_upcast defaults to True for better quality (float32 VAE decode)
+        # Only disable if using fp16-specific VAE like madebyollin/sdxl-vae-fp16-fix
 
         # Apply VRAM profile optimizations
         from txt2img.config import get_vram_profile
@@ -404,12 +402,18 @@ class SDXLPipeline(BasePipeline):
 
         logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={SDXL_FIXED_STEPS}")
 
-        # Set scheduler from params
+        # Set scheduler from params with Karras sigmas and trailing timesteps for Forge compatibility
         scheduler_class = SCHEDULERS.get(params.sampler, EulerAncestralDiscreteScheduler)
-        self.pipe.scheduler = scheduler_class.from_config(self.pipe.scheduler.config)
-        logger.info(f"Scheduler set: {params.sampler}")
+        scheduler_config = {
+            **self.pipe.scheduler.config,
+            "use_karras_sigmas": True,
+            "timestep_spacing": "trailing",
+        }
+        self.pipe.scheduler = scheduler_class.from_config(scheduler_config)
+        logger.info(f"Scheduler set: {params.sampler} (karras=True, trailing)")
 
         # Determine seed
+        # Forge default uses GPU for random generation
         seed = params.seed if params.seed is not None else random.randint(0, 2**32 - 1)
         generator = torch.Generator(device="cuda").manual_seed(seed)
         logger.info(f"Seed: {seed}")
@@ -561,7 +565,7 @@ class SDXLPipeline(BasePipeline):
             if hasattr(self.pipe, "text_encoder_2") and self.pipe.text_encoder_2 is not None:
                 self.pipe.text_encoder_2 = self.pipe.text_encoder_2.to(device)
 
-        # Use CompelForSDXL (new non-deprecated API)
+        # CompelForSDXL handles CLIP Skip 2 internally for SDXL
         compel = CompelForSDXL(self.pipe)
 
         # Prepend trigger words to prompt if any (separated by BREAK)

@@ -16,47 +16,104 @@ interface ImageModalProps {
     onNext?: () => void
 }
 
-// Parse prompt tags with weights (e.g., "(tag:1.2)" or "tag")
-function parsePromptTags(prompt: string): { tag: string; weight: number; isBreak?: boolean }[] {
-    const results: { tag: string; weight: number; isBreak?: boolean }[] = []
+// Parsed tag with weight and nesting info
+interface ParsedTag {
+    tag: string
+    weight: number
+    isBreak?: boolean
+    depth?: number // Nesting depth for visual indication
+}
 
-    // Split by comma or newline and process each part
-    const parts = prompt.split(/[,\n]/).map((p) => p.trim()).filter(Boolean)
+// Parse prompt tags with proper BREAK handling and nested group support
+function parsePromptTags(prompt: string): ParsedTag[] {
+    const results: ParsedTag[] = []
 
-    for (const part of parts) {
-        // Check for BREAK keyword
-        if (part.toUpperCase() === "BREAK") {
+    // First, split by BREAK (case insensitive, word boundary)
+    const segments = prompt.split(/\bBREAK\b/i)
+
+    segments.forEach((segment, segIndex) => {
+        // Add BREAK separator between segments (not before first)
+        if (segIndex > 0) {
             results.push({ tag: "BREAK", weight: 1.0, isBreak: true })
-            continue
         }
 
-        // Match (text:weight) pattern
-        const weightMatch = part.match(/^\((.+):(\d+\.?\d*)\)$/)
-        if (weightMatch) {
-            results.push({
-                tag: weightMatch[1].trim(),
-                weight: parseFloat(weightMatch[2]),
-            })
-        } else {
-            // Check for multiple parentheses (Compel style: ((tag)) = 1.1^n)
-            const parenMatch = part.match(/^(\(+)([^()]+)(\)+)$/)
-            if (parenMatch && parenMatch[1].length === parenMatch[3].length) {
-                const depth = parenMatch[1].length
-                results.push({
-                    tag: parenMatch[2].trim(),
-                    weight: Math.pow(1.1, depth),
-                })
-            } else {
-                // Plain tag
-                results.push({
-                    tag: part.replace(/[()]/g, "").trim(),
-                    weight: 1.0,
-                })
+        // Split segment by comma or newline
+        const parts = segment.split(/[,\n]/).map((p) => p.trim()).filter(Boolean)
+
+        for (const part of parts) {
+            // Parse the part with stack-based approach for nested weights
+            const parsed = parseWeightedPart(part)
+            if (parsed) {
+                results.push(parsed)
             }
+        }
+    })
+
+    return results
+}
+
+// Parse a single part that may have weights
+function parseWeightedPart(part: string): ParsedTag | null {
+    if (!part.trim()) return null
+
+    // Match explicit weight: (text:1.5) or (text:0.8)
+    const explicitMatch = part.match(/^\((.+):([\d.]+)\)$/)
+    if (explicitMatch) {
+        const innerText = explicitMatch[1].trim()
+        const weight = parseFloat(explicitMatch[2])
+        // Check if inner has more nesting
+        const depth = countNestingDepth(innerText)
+        return {
+            tag: innerText.replace(/[()[\]]/g, "").trim(),
+            weight: weight,
+            depth: depth > 0 ? depth : undefined,
         }
     }
 
-    return results
+    // Match nested parentheses: ((word)) = 1.1^n
+    const parenMatch = part.match(/^(\(+)(.+?)(\)+)$/)
+    if (parenMatch && parenMatch[1].length === parenMatch[3].length) {
+        const depth = parenMatch[1].length
+        const innerText = parenMatch[2].trim()
+        return {
+            tag: innerText,
+            weight: Math.pow(1.1, depth),
+            depth: depth,
+        }
+    }
+
+    // Match nested brackets: [[word]] = 0.9^n
+    const bracketMatch = part.match(/^(\[+)(.+?)(\]+)$/)
+    if (bracketMatch && bracketMatch[1].length === bracketMatch[3].length) {
+        const depth = bracketMatch[1].length
+        const innerText = bracketMatch[2].trim()
+        return {
+            tag: innerText,
+            weight: Math.pow(1 / 1.1, depth),
+            depth: depth,
+        }
+    }
+
+    // Plain tag (strip any remaining brackets)
+    const cleanTag = part.replace(/[()[\]]/g, "").trim()
+    if (!cleanTag) return null
+
+    return { tag: cleanTag, weight: 1.0 }
+}
+
+// Count nesting depth for visual indication
+function countNestingDepth(text: string): number {
+    let depth = 0
+    let maxDepth = 0
+    for (const char of text) {
+        if (char === "(" || char === "[") {
+            depth++
+            maxDepth = Math.max(maxDepth, depth)
+        } else if (char === ")" || char === "]") {
+            depth--
+        }
+    }
+    return maxDepth
 }
 
 // Get badge color based on weight (gradual 0.1 steps)
@@ -70,6 +127,16 @@ function getWeightColor(weight: number): "violet" | "purple" | "plum" | "gray" |
     return undefined                         // Normal (1.0)
 }
 
+// Get border style based on nesting depth
+function getDepthStyle(depth?: number): React.CSSProperties {
+    if (!depth || depth <= 1) return {}
+    // Add subtle border to indicate nesting
+    const intensity = Math.min(depth, 5) // Cap at 5
+    return {
+        boxShadow: `inset 0 0 0 ${intensity}px rgba(255, 255, 255, 0.1)`,
+    }
+}
+
 // Metadata content component (must be outside render)
 const MetadataContent = ({
     promptTags,
@@ -81,8 +148,8 @@ const MetadataContent = ({
     width,
     height,
 }: {
-    promptTags: { tag: string; weight: number; isBreak?: boolean }[]
-    negativeTags: { tag: string; weight: number; isBreak?: boolean }[]
+    promptTags: ParsedTag[]
+    negativeTags: ParsedTag[]
     modelName?: string
     seed?: number
     steps?: number
@@ -104,6 +171,14 @@ const MetadataContent = ({
                             size="1"
                             variant={item.isBreak ? "solid" : item.weight !== 1.0 ? "solid" : "soft"}
                             color={item.isBreak ? "orange" : getWeightColor(item.weight)}
+                            style={{
+                                ...getDepthStyle(item.depth),
+                                maxWidth: "200px",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                            }}
+                            title={item.weight !== 1.0 ? `${item.tag} (${item.weight.toFixed(2)})` : item.tag}
                         >
                             {item.tag}
                             {item.weight !== 1.0 && !item.isBreak && (
@@ -130,6 +205,13 @@ const MetadataContent = ({
                             size="1"
                             variant="outline"
                             color="red"
+                            style={{
+                                maxWidth: "200px",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                            }}
+                            title={item.weight !== 1.0 ? `${item.tag} (${item.weight.toFixed(2)})` : item.tag}
                         >
                             {item.tag}
                             {item.weight !== 1.0 && (
