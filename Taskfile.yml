@@ -102,8 +102,10 @@ tasks:
       - docker build -t {{.IMAGE}}:{{.TAG}} -t {{.IMAGE}}:latest -f deploy/Dockerfile .
       - echo "✓ Built {{.IMAGE}}:{{.TAG}} and {{.IMAGE}}:latest"
 
-  deploy.push:
+  deploy:
     desc: Push deployment image
+    deps:
+      - task: deploy.build
     vars:
       DATE:
         sh: date +%Y%m%d
@@ -113,10 +115,6 @@ tasks:
       - docker push {{.IMAGE}}:{{.TAG}}
       - docker push {{.IMAGE}}:latest
       - echo "✓ Pushed {{.IMAGE}}:{{.TAG}} and {{.IMAGE}}:latest"
-
-  deploy:
-    desc: Build and push deployment image
-    deps: [deploy.build, deploy.push]
 
   deploy.run:
     desc: Run deployment image locally

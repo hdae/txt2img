@@ -66,18 +66,6 @@ export const ServerInfoTab = () => {
                         <Text color="gray">ステップ数</Text>
                         <Code>{schema.fixed.steps}</Code>
                     </Flex>
-
-                    <Flex justify="between">
-                        <Text color="gray">CFG Scale</Text>
-                        <Code>{schema.fixed.cfg_scale}</Code>
-                    </Flex>
-
-                    {schema.fixed.sampler && (
-                        <Flex justify="between">
-                            <Text color="gray">サンプラー</Text>
-                            <Code>{schema.fixed.sampler}</Code>
-                        </Flex>
-                    )}
                 </Flex>
             </Card>
 
