@@ -47,6 +47,22 @@ SCHEDULERS = {
 SDXL_FIXED_STEPS = 20
 
 
+def get_model_dtype() -> torch.dtype:
+    """Get optimal dtype for model inference.
+
+    Uses bfloat16 on RTX 30/40 series (compute capability >= 8.0) for better
+    dynamic range and color accuracy. Falls back to float16 otherwise.
+    This matches Forge's behavior.
+    """
+    if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+        device_props = torch.cuda.get_device_properties(torch.cuda.current_device())
+        if device_props.major >= 8:
+            logger.info("Using bfloat16 (RTX 30/40 series detected)")
+            return torch.bfloat16
+    logger.info("Using float16")
+    return torch.float16
+
+
 
 class SDXLPipeline(BasePipeline):
     """SDXL Pipeline manager with model configuration support."""
@@ -170,6 +186,9 @@ class SDXLPipeline(BasePipeline):
         # Enable memory optimizations
         self.pipe.vae.enable_slicing()
 
+        # Disable watermark (matches Forge/A1111 behavior)
+        self.pipe.watermark = None
+
         # Note: force_upcast defaults to True for better quality (float32 VAE decode)
         # Only disable if using fp16-specific VAE like madebyollin/sdxl-vae-fp16-fix
 
@@ -194,7 +213,7 @@ class SDXLPipeline(BasePipeline):
                 self._model_name = model_path.stem
                 self.pipe = StableDiffusionXLPipeline.from_single_file(
                     str(model_path),
-                    torch_dtype=torch.float16,
+                    torch_dtype=get_model_dtype(),
                     use_safetensors=True,
                 )
             else:
@@ -204,7 +223,7 @@ class SDXLPipeline(BasePipeline):
             self._model_name = model_ref.repo_id.split("/")[-1]
             self.pipe = StableDiffusionXLPipeline.from_pretrained(
                 model_path,
-                torch_dtype=torch.float16,
+                torch_dtype=get_model_dtype(),
                 use_safetensors=True,
                 token=settings.hf_token,
             )
@@ -213,7 +232,7 @@ class SDXLPipeline(BasePipeline):
             self._model_name = downloaded_path.stem
             self.pipe = StableDiffusionXLPipeline.from_single_file(
                 str(downloaded_path),
-                torch_dtype=torch.float16,
+                torch_dtype=get_model_dtype(),
                 use_safetensors=True,
             )
         else:
@@ -239,21 +258,21 @@ class SDXLPipeline(BasePipeline):
                 vae_path = await civitai_download(vae_model_ref)
                 vae = AutoencoderKL.from_single_file(
                     str(vae_path),
-                    torch_dtype=torch.float16,
+                    torch_dtype=get_model_dtype(),
                 )
             else:
                 raise ValueError(f"Unsupported VAE AIR source: {vae_model_ref.source}")
         elif isinstance(vae_model_ref, HuggingFaceResource):
             vae = AutoencoderKL.from_pretrained(
                 vae_model_ref.repo_id,
-                torch_dtype=torch.float16,
+                torch_dtype=get_model_dtype(),
                 token=settings.hf_token,
             )
         elif isinstance(vae_model_ref, URLResource):
             vae_path = await download_from_url(vae_model_ref)
             vae = AutoencoderKL.from_single_file(
                 str(vae_path),
-                torch_dtype=torch.float16,
+                torch_dtype=get_model_dtype(),
             )
         else:
             raise ValueError(f"Unsupported VAE reference type: {type(vae_model_ref)}")
@@ -400,7 +419,8 @@ class SDXLPipeline(BasePipeline):
         # Apply LoRAs (must be done before inference_mode)
         applied_loras, trigger_info = self._apply_loras(params.loras)
 
-        logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={SDXL_FIXED_STEPS}")
+        config = get_model_config()
+        logger.info(f"Starting generation: prompt={params.prompt[:50]}, steps={config.default_steps}")
 
         # Set scheduler from params with Karras sigmas and trailing timesteps for Forge compatibility
         scheduler_class = SCHEDULERS.get(params.sampler, EulerAncestralDiscreteScheduler)
@@ -413,10 +433,11 @@ class SDXLPipeline(BasePipeline):
         logger.info(f"Scheduler set: {params.sampler} (karras=True, trailing)")
 
         # Determine seed
-        # Forge default uses GPU for random generation
+        # RNG device is configurable: "cuda" for Forge compatibility, "cpu" for Diffusers default
+        rng_device = config.rng_source if config.rng_source in ("cuda", "cpu") else "cuda"
         seed = params.seed if params.seed is not None else random.randint(0, 2**32 - 1)
-        generator = torch.Generator(device="cuda").manual_seed(seed)
-        logger.info(f"Seed: {seed}")
+        generator = torch.Generator(device=rng_device).manual_seed(seed)
+        logger.info(f"Seed: {seed} (rng: {rng_device})")
 
         # Compute embeddings with trigger word support and LPW->Compel conversion
         (
@@ -463,7 +484,7 @@ class SDXLPipeline(BasePipeline):
                     "negative_pooled_prompt_embeds": negative_pooled_prompt_embeds,
                     "width": params.width,
                     "height": params.height,
-                    "num_inference_steps": SDXL_FIXED_STEPS,
+                    "num_inference_steps": config.default_steps,
                     "guidance_scale": params.cfg_scale,
                     "generator": generator,
                 }
@@ -483,7 +504,7 @@ class SDXLPipeline(BasePipeline):
             prompt=full_prompt,
             negative_prompt=params.negative_prompt,
             seed=seed,
-            steps=SDXL_FIXED_STEPS,
+            steps=config.default_steps,
             cfg_scale=params.cfg_scale,
             width=params.width,
             height=params.height,

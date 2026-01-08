@@ -87,6 +87,7 @@ class ModelConfig:
     default_steps: int = 20
     default_cfg: float = 7.0
     default_sampler: str = "euler"
+    rng_source: str = "cuda"  # "cuda" for Forge compatibility, "cpu" for Diffusers default
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ModelConfig":

@@ -119,6 +119,15 @@
                         "lms"
                     ],
                     "description": "Default sampler algorithm"
+                },
+                "rng_source": {
+                    "type": "string",
+                    "default": "cuda",
+                    "enum": [
+                        "cuda",
+                        "cpu"
+                    ],
+                    "description": "RNG device: cuda for Forge compatibility, cpu for Diffusers default"
                 }
             }
         },
