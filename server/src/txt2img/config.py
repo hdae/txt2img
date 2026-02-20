@@ -44,6 +44,7 @@ class ModelType(str, Enum):
     FLUX_SCHNELL = "flux_schnell"  # Flux.1 [schnell] - timestep-distilled (4 steps)
     CHROMA = "chroma"  # Chroma - 8.9B lightweight Flux variant
     ZIMAGE = "zimage"  # Z-Image Turbo - 6B fast (8 steps, 16GB VRAM)
+    ANIMA = "anima"  # Anima Model
 
 
 @dataclass

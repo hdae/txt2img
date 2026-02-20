@@ -9,6 +9,7 @@
 | **Flux Dev**     | Flux.1 [dev]. High quality, ~50 steps.                       | `flux/dev`         | ❌   |
 | **Flux Schnell** | Flux.1 [schnell]. Fast, 4 steps.                             | `flux/schnell`     | ❌   |
 | **Z-Image**      | Z-Image Turbo. Fast 6B model, 8 steps.                       | `zimage/turbo`     | ❌   |
+| **Anima**        | Anima Diffusion Model. Tag-based prompts.                    | `anima/preview`    | ❌   |
 
 ### Fixed Parameters
 
@@ -22,6 +23,7 @@ performance. These cannot be changed via the API.
 | **Flux Dev**     | 50    | 3.5       | -       |
 | **Flux Schnell** | 4     | 0.0       | -       |
 | **Z-Image**      | 8     | 0.0       | -       |
+| **Anima**        | 32    | 4.0       | -       |
 
 ## VRAM Profiles
 

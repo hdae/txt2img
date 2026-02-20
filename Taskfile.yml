@@ -42,6 +42,13 @@ tasks:
     cmds:
       - docker compose exec server bash
 
+  exec:
+    desc: Execute a command in the running container
+    cmds:
+      - docker compose exec --user app server {{.CLI_ARGS}}
+    vars:
+      CLI_ARGS: '{{default "bash" .CLI_ARGS}}'
+
   logs:
     desc: View container logs
     cmds:

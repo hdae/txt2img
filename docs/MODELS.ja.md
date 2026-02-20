@@ -2,13 +2,14 @@
 
 ## 対応モデル
 
-| タイプ           | 説明                                                  | プリセット例       | LoRA |
-| :--------------- | :---------------------------------------------------- | :----------------- | :--- |
-| **SDXL**         | SDXLおよび派生（Illustrious等）。タグ形式プロンプト。 | `sdxl/illustrious` | ✅   |
-| **Chroma**       | 軽量Flux派生 (8.9B)。自然言語。                       | `chroma/flash`     | ❌   |
-| **Flux Dev**     | Flux.1 [dev]。高品質、約50ステップ。                  | `flux/dev`         | ❌   |
-| **Flux Schnell** | Flux.1 [schnell]。高速、4ステップ。                   | `flux/schnell`     | ❌   |
-| **Z-Image**      | Z-Image Turbo。高速6Bモデル、8ステップ。              | `zimage/turbo`     | ❌   |
+| タイプ           | 説明                                                     | プリセット例       | LoRA |
+| :--------------- | :------------------------------------------------------- | :----------------- | :--- |
+| **SDXL**         | SDXL とその派生(Illustrious等)。タグベースのプロンプト。 | `sdxl/illustrious` | ✅   |
+| **Chroma**       | Flux派生軽量モデル(8.9B)。自然言語のプロンプト。         | `chroma/flash`     | ❌   |
+| **Flux Dev**     | Flux.1 [dev]。高品質、約50ステップ。                     | `flux/dev`         | ❌   |
+| **Flux Schnell** | Flux.1 [schnell]。高速、4ステップ。                      | `flux/schnell`     | ❌   |
+| **Z-Image**      | Z-Image Turbo。高速6Bモデル、8ステップ。                 | `zimage/turbo`     | ❌   |
+| **Anima**        | Anima Diffusionモデル。タグベースのプロンプト。          | `anima/preview`    | ❌   |
 
 ### 固定パラメータ
 
@@ -21,6 +22,7 @@
 | **Flux Dev**     | 50    | 3.5       | -       |
 | **Flux Schnell** | 4     | 0.0       | -       |
 | **Z-Image**      | 8     | 0.0       | -       |
+| **Anima**        | 32    | 4.0       | -       |
 
 ## VRAM プロファイル
 

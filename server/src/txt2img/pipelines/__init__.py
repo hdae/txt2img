@@ -37,6 +37,10 @@ def get_pipeline() -> BasePipeline:
             from txt2img.pipelines.zimage import ZImagePipelineImpl
 
             _pipeline = ZImagePipelineImpl()
+        elif config.type == ModelType.ANIMA:
+            from txt2img.pipelines.anima import AnimaPipelineImpl
+
+            _pipeline = AnimaPipelineImpl()
         else:
             raise ValueError(f"Unsupported model type: {config.type}")
     return _pipeline
