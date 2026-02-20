@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -142,14 +142,17 @@ class Settings(BaseSettings):
     civitai_api_key: str | None = Field(default=None, description="Civitai API key")
     hf_token: str | None = Field(default=None, description="HuggingFace token")
 
+    # Project root (base for relative paths)
+    project_root: Path = Field(
+        default_factory=Path.cwd,
+        description="Project root directory (defaults to current directory)",
+    )
+
     # Directories
-    output_dir: Path = Field(default=Path("./outputs"), description="Output directory")
-    model_cache_dir: Path = Field(
-        default=Path("/workspace/models"), description="Model cache directory"
-    )
-    presets_dir: Path = Field(
-        default=Path("/workspace/app/presets"), description="Presets directory"
-    )
+    output_dir: Path | None = Field(default=None, description="Output directory")
+    model_cache_dir: Path | None = Field(default=None, description="Model cache directory")
+    presets_dir: Path | None = Field(default=None, description="Presets directory")
+    client_dist_dir: Path | None = Field(default=None, description="Client dist directory")
 
     # VRAM optimization (overrides preset value)
     vram_profile: str | None = Field(
@@ -164,6 +167,27 @@ class Settings(BaseSettings):
     # Server settings
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
+
+    @model_validator(mode="after")
+    def _resolve_paths(self) -> "Settings":
+        """Resolve directory settings relative to PROJECT_ROOT by default."""
+        project_root = self.project_root.expanduser()
+        if not project_root.is_absolute():
+            project_root = (Path.cwd() / project_root).resolve()
+        self.project_root = project_root
+
+        self.output_dir = self._resolve_dir(self.output_dir, Path("outputs"))
+        self.model_cache_dir = self._resolve_dir(self.model_cache_dir, Path("models"))
+        self.presets_dir = self._resolve_dir(self.presets_dir, Path("server/presets"))
+        self.client_dist_dir = self._resolve_dir(self.client_dist_dir, Path("client/dist"))
+
+        return self
+
+    def _resolve_dir(self, value: Path | None, default_rel: Path) -> Path:
+        path = value.expanduser() if value is not None else default_rel
+        if not path.is_absolute():
+            path = self.project_root / path
+        return path.resolve()
 
 
 @lru_cache

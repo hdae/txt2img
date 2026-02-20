@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from txt2img.api.router import router
 from txt2img.config import get_settings
@@ -185,11 +186,7 @@ app.include_router(router)
 
 # Serve static client files (production build)
 # Mount at /static and serve index.html for SPA routing
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-
-CLIENT_DIST_DIR = Path("/workspace/client")
+CLIENT_DIST_DIR = get_settings().client_dist_dir
 
 if CLIENT_DIST_DIR.exists():
     # Serve static assets

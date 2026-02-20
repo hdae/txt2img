@@ -1,0 +1,65 @@
+version: "3"
+
+# Automatically detect host UID/GID on Linux/Unix
+# On Windows (or if id command unavailable), falls back to env var or 1000
+vars:
+  PUID:
+    sh: command -v id >/dev/null 2>&1 && echo ${PUID:-$(id -u)} || echo ${PUID:-1000}
+  PGID:
+    sh: command -v id >/dev/null 2>&1 && echo ${PGID:-$(id -g)} || echo ${PGID:-1000}
+  # Project name for volume naming (matches docker-compose default behavior)
+  COMPOSE_PROJECT_NAME: '{{.COMPOSE_PROJECT_NAME | default (env "COMPOSE_PROJECT_NAME" | default (dir .TASKFILE_DIR | base))}}'
+
+env:
+  PUID: "{{.PUID}}"
+  PGID: "{{.PGID}}"
+
+tasks:
+  up:
+    desc: Start the container
+    deps: [create-volume]
+    cmds:
+      - docker compose up
+
+  up.detach:
+    desc: Start the container in detached mode
+    deps: [create-volume]
+    cmds:
+      - docker compose up -d
+
+  down:
+    desc: Stop the container
+    cmds:
+      - docker compose down
+
+  restart:
+    desc: Restart the container
+    cmds:
+      - docker compose restart
+
+  exec:
+    desc: Execute a command in the running container
+    cmds:
+      - docker compose exec --user app app {{.CLI_ARGS}}
+    vars:
+      CLI_ARGS: '{{default "bash" .CLI_ARGS}}'
+
+  logs:
+    desc: View container logs
+    cmds:
+      - docker compose logs -f
+
+  create-volume:
+    desc: Create shared uv-cache volume if it doesn't exist
+    cmds:
+      - docker volume create shared_uv-cache || true
+    status:
+      - docker volume inspect shared_uv-cache
+
+  reset:
+    desc: Reset app volume (keeps cache)
+    prompt: This will delete the app volume. Continue?
+    cmds:
+      - docker compose down
+      - docker volume rm {{.COMPOSE_PROJECT_NAME}}_app-data || true
+      - echo "✓ Reset complete. Run 'task up' to restart."
