@@ -344,13 +344,14 @@ class AnimaLoraLoaderMixin(LoraBaseMixin):
         kwargs["return_lora_metadata"] = True
         state_dict, metadata = self.lora_state_dict(pretrained_model_name_or_path_or_dict, **kwargs)
 
-        is_correct_format = all("lora" in key for key in state_dict.keys())
+        is_correct_format = all("lora" in key for key in state_dict)
         if not is_correct_format:
             raise ValueError("Invalid LoRA checkpoint. Make sure all LoRA param names contain `'lora'` substring.")
 
+        target_transformer = _resolve_pipeline_transformer(self, self.transformer_name)
         self.load_lora_into_transformer(
             state_dict,
-            transformer=getattr(self, self.transformer_name) if not hasattr(self, "transformer") else self.transformer,
+            transformer=target_transformer,
             adapter_name=adapter_name,
             metadata=metadata,
             _pipeline=self,
@@ -416,19 +417,32 @@ class AnimaLoraLoaderMixin(LoraBaseMixin):
 
     def fuse_lora(
         self,
-        components: list[str] = ["transformer"],
+        components: list[str] | None = None,
         lora_scale: float = 1.0,
         safe_fusing: bool = False,
         adapter_names: list[str] | None = None,
         **kwargs,
     ):
+        resolved_components = ["transformer"] if components is None else components
         super().fuse_lora(
-            components=components,
+            components=resolved_components,
             lora_scale=lora_scale,
             safe_fusing=safe_fusing,
             adapter_names=adapter_names,
             **kwargs,
         )
 
-    def unfuse_lora(self, components: list[str] = ["transformer"], **kwargs):
-        super().unfuse_lora(components=components, **kwargs)
+    def unfuse_lora(self, components: list[str] | None = None, **kwargs):
+        resolved_components = ["transformer"] if components is None else components
+        super().unfuse_lora(components=resolved_components, **kwargs)
+
+
+def _resolve_pipeline_transformer(pipeline: object, transformer_name: str):
+    transformer = getattr(pipeline, "transformer", None)
+    if transformer is not None:
+        return transformer
+
+    transformer = getattr(pipeline, transformer_name, None)
+    if transformer is None:
+        raise ValueError(f"Could not resolve transformer component '{transformer_name}' from pipeline.")
+    return transformer

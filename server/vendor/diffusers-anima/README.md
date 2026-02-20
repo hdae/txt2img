@@ -53,7 +53,6 @@ result = pipe(
     num_inference_steps=32,
     guidance_scale=4.0,
     generator=generator,  # Diffusers-style RNG input
-    # seed=42,            # Backward-compatible option
 )
 image = result.images[0]
 image.save("anima_from_pretrained.png")
@@ -79,6 +78,7 @@ for idx, image in enumerate(batch_result.images):
 
 ```python
 from PIL import Image
+import torch
 
 from diffusers_anima import AnimaPipeline
 
@@ -89,6 +89,7 @@ init_image = Image.open("/absolute/path/to/input.png").convert("RGB")
 mask_image = Image.open("/absolute/path/to/mask.png").convert("L")
 
 # Img2Img:
+img2img_generator = torch.Generator(device="cpu").manual_seed(42)
 img2img = pipe(
     prompt="masterpiece, best quality, 1girl",
     negative_prompt="worst quality, low quality",
@@ -98,11 +99,12 @@ img2img = pipe(
     height=1024,
     num_inference_steps=32,
     guidance_scale=4.0,
-    seed=42,
+    generator=img2img_generator,
 )
 img2img.images[0].save("anima_img2img.png")
 
 # Inpaint:
+inpaint_generator = torch.Generator(device="cpu").manual_seed(43)
 inpaint = pipe(
     prompt="masterpiece, best quality, 1girl",
     negative_prompt="worst quality, low quality",
@@ -113,7 +115,7 @@ inpaint = pipe(
     height=1024,
     num_inference_steps=32,
     guidance_scale=4.0,
-    seed=42,
+    generator=inpaint_generator,
 )
 inpaint.images[0].save("anima_inpaint.png")
 ```
@@ -122,6 +124,7 @@ inpaint.images[0].save("anima_inpaint.png")
 
 ```python
 from diffusers_anima import AnimaPipeline
+import torch
 
 pipe = AnimaPipeline.from_pretrained(
     "circlestone-labs/Anima::split_files/diffusion_models/anima-preview.safetensors",
@@ -136,7 +139,7 @@ result = pipe(
     height=1024,
     num_inference_steps=32,
     guidance_scale=4.0,
-    seed=42,
+    generator=torch.Generator(device="cpu").manual_seed(42),
 )
 image = result.images[0]
 image.save("anima_with_lora.png")
@@ -148,9 +151,9 @@ image.save("anima_with_lora.png")
 - `from_single_file` accepts the same runtime/loading options as `from_pretrained` (including `enable_vae_slicing` and related flags).
 - You can pass loading options such as `local_files_only`, `cache_dir`, `force_download`, `token`, `revision`, and `proxies`.
 - `generator` accepts `torch.Generator` or a list/tuple of `torch.Generator` (length must match effective batch size).
-- If both `generator` and `seed` are provided, `generator` is used.
 - `prompt` and `negative_prompt` accept either a string or a list/tuple of strings.
 - `num_images_per_prompt` is supported.
+- `image` / `mask_image` accept `PIL.Image`, `numpy.ndarray`, `torch.Tensor`, or list/tuple of those types.
 - `strength` is for `image`/`mask_image` workflows and must be in `(0, 1]`. Keep `strength=1.0` for text-to-image.
 - `mask_image` requires `image`. White areas in the mask are regenerated.
 

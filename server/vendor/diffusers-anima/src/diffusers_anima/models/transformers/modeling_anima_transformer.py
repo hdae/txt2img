@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import numbers
 import re
 from typing import Any
@@ -27,6 +26,31 @@ def _rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 def _apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
     return (x * cos.unsqueeze(1)) + (_rotate_half(x) * sin.unsqueeze(1))
+
+
+def _expand_attention_mask(mask: torch.Tensor | None) -> torch.Tensor | None:
+    if mask is None:
+        return None
+    casted = mask.to(torch.bool)
+    if casted.ndim == 2:
+        return casted[:, None, None, :]
+    return casted
+
+
+def _build_position_ids(batch_size: int, length: int, device: torch.device) -> torch.Tensor:
+    base = torch.arange(length, device=device, dtype=torch.long)
+    return base.unsqueeze(0).expand(batch_size, -1)
+
+
+def _pad_to_length(hidden_states: torch.Tensor, target_length: int) -> torch.Tensor:
+    pad_tokens = target_length - hidden_states.shape[1]
+    if pad_tokens <= 0:
+        return hidden_states
+    return F.pad(hidden_states, (0, 0, 0, pad_tokens))
+
+
+def _default_padding_mask(hidden_states: torch.Tensor) -> torch.Tensor:
+    return torch.zeros((1, 1, hidden_states.shape[-2], hidden_states.shape[-1]), device=hidden_states.device, dtype=hidden_states.dtype)
 
 
 class _AnimaRMSNorm(nn.Module):
@@ -99,15 +123,17 @@ def _patch_diffusers_rmsnorm_to_anima(module: nn.Module) -> None:
 class _RotaryEmbedding(nn.Module):
     def __init__(self, head_dim: int, theta: float = 10000.0):
         super().__init__()
-        exponents = torch.arange(0, head_dim, 2, dtype=torch.float32) / float(head_dim)
-        inv = torch.exp((-math.log(theta)) * exponents)
+        half_dim = head_dim // 2
+        index = torch.arange(half_dim, dtype=torch.float32)
+        exponent = (2.0 / float(head_dim)) * index
+        inv = torch.reciprocal(torch.pow(torch.tensor(theta, dtype=torch.float32), exponent))
         self.register_buffer("inv_freq", inv, persistent=False)
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        inv = self.inv_freq[None, :, None].to(device=x.device, dtype=torch.float32).expand(positions.shape[0], -1, 1)
-        pos = positions[:, None, :].to(dtype=torch.float32)
-        freqs = (inv @ pos).transpose(1, 2)
-        emb = torch.cat([freqs, freqs], dim=-1)
+        pos = positions.to(device=x.device, dtype=torch.float32)
+        inv = self.inv_freq.to(device=x.device, dtype=torch.float32)
+        freqs = torch.einsum("bl,d->bld", pos, inv)
+        emb = freqs.repeat(1, 1, 2)
         return emb.cos().to(dtype=x.dtype), emb.sin().to(dtype=x.dtype)
 
 
@@ -208,26 +234,37 @@ class _LLMAdapter(nn.Module):
         target_attention_mask: torch.Tensor | None = None,
         source_attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        if target_attention_mask is not None and target_attention_mask.ndim == 2:
-            target_attention_mask = target_attention_mask.to(torch.bool).unsqueeze(1).unsqueeze(1)
-        if source_attention_mask is not None and source_attention_mask.ndim == 2:
-            source_attention_mask = source_attention_mask.to(torch.bool).unsqueeze(1).unsqueeze(1)
+        normalized_target_mask = _expand_attention_mask(target_attention_mask)
+        normalized_source_mask = _expand_attention_mask(source_attention_mask)
 
-        x = self.embed(target_input_ids)
-        context = source_hidden_states
-        pos_target = self.rope(x, torch.arange(x.shape[1], device=x.device).unsqueeze(0))
-        pos_source = self.rope(context, torch.arange(context.shape[1], device=context.device).unsqueeze(0))
+        target_hidden_states = self.embed(target_input_ids)
+        source_context = source_hidden_states
 
+        target_position_ids = _build_position_ids(
+            batch_size=target_hidden_states.shape[0],
+            length=target_hidden_states.shape[1],
+            device=target_hidden_states.device,
+        )
+        source_position_ids = _build_position_ids(
+            batch_size=source_context.shape[0],
+            length=source_context.shape[1],
+            device=source_context.device,
+        )
+
+        target_position_embed = self.rope(target_hidden_states, target_position_ids)
+        source_position_embed = self.rope(source_context, source_position_ids)
+
+        hidden_states = target_hidden_states
         for block in self.blocks:
-            x = block(
-                x,
-                context=context,
-                target_mask=target_attention_mask,
-                source_mask=source_attention_mask,
-                pos_target=pos_target,
-                pos_source=pos_source,
+            hidden_states = block(
+                hidden_states,
+                context=source_context,
+                target_mask=normalized_target_mask,
+                source_mask=normalized_source_mask,
+                pos_target=target_position_embed,
+                pos_source=source_position_embed,
             )
-        return self.norm(self.out_proj(x))
+        return self.norm(self.out_proj(hidden_states))
 
 
 class AnimaTransformerModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
@@ -247,23 +284,22 @@ class AnimaTransformerModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
     ) -> torch.Tensor:
         if text_ids is None:
             return text_embeds
-        out = self.llm_adapter(text_embeds, text_ids)
+
+        adapted = self.llm_adapter(text_embeds, text_ids)
         if t5xxl_weights is not None:
-            out = out.mul(t5xxl_weights)
-        pad_tokens = max(0, 512 - out.shape[1])
-        if pad_tokens:
-            out = F.pad(out, (0, 0, 0, pad_tokens))
-        return out
+            adapted = adapted * t5xxl_weights
+        return _pad_to_length(adapted, 512)
 
     def forward(self, x: torch.Tensor, timesteps: torch.Tensor, context: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         t5xxl_ids = kwargs.pop("t5xxl_ids", None)
+        t5xxl_weights = kwargs.pop("t5xxl_weights", None)
         if t5xxl_ids is not None:
-            context = self.preprocess_text_embeds(context, t5xxl_ids, t5xxl_weights=kwargs.pop("t5xxl_weights", None))
+            context = self.preprocess_text_embeds(context, t5xxl_ids, t5xxl_weights=t5xxl_weights)
 
         padding_mask = kwargs.pop("padding_mask", None)
         if padding_mask is None:
             # CosmosTransformer3DModel internally repeats this per batch, so keep batch=1 here.
-            padding_mask = torch.zeros((1, 1, x.shape[-2], x.shape[-1]), device=x.device, dtype=x.dtype)
+            padding_mask = _default_padding_mask(x)
 
         return self.core(
             hidden_states=x,

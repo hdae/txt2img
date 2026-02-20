@@ -41,6 +41,68 @@ from .pipeline_output import AnimaPipelineOutput
 
 PromptInput = str | list[str] | tuple[str, ...]
 GeneratorInput = torch.Generator | list[torch.Generator] | tuple[torch.Generator, ...]
+ImageInput = Image.Image | np.ndarray | torch.Tensor
+ImageBatchInput = ImageInput | list[ImageInput] | tuple[ImageInput, ...]
+
+_IMAGE_INPUT_TYPES = (Image.Image, np.ndarray, torch.Tensor, list, tuple)
+_IMAGE_BATCH_ITEM_TYPES = (Image.Image, np.ndarray, torch.Tensor)
+_SUPPORTED_SAMPLERS = {"flowmatch_euler", "euler", "euler_a_rf", "euler_ancestral_rf"}
+_SUPPORTED_SIGMA_SCHEDULES = {"beta", "uniform", "simple", "normal"}
+_SUPPORTED_CFG_BATCH_MODES = {"split", "concat"}
+_SUPPORTED_OUTPUT_TYPES = {"pil", "np"}
+
+
+def _validate_image_like_input(image: ImageBatchInput | None, *, input_name: str) -> None:
+    if image is None:
+        return
+
+    if not isinstance(image, _IMAGE_INPUT_TYPES):
+        raise ValueError(
+            f"`{input_name}` must be a PIL image, numpy array, torch tensor, or a list/tuple of those types."
+        )
+
+    if isinstance(image, (list, tuple)):
+        if len(image) == 0:
+            raise ValueError(f"`{input_name}` list/tuple must not be empty.")
+        if not all(isinstance(item, _IMAGE_BATCH_ITEM_TYPES) for item in image):
+            raise ValueError(
+                f"`{input_name}` list/tuple must contain PIL.Image.Image, numpy arrays, or torch tensors."
+            )
+
+
+def _validate_sampling_modes(
+    *,
+    sampler: str,
+    sigma_schedule: str,
+    cfg_batch_mode: str,
+    output_type: str,
+) -> None:
+    if sampler not in _SUPPORTED_SAMPLERS:
+        raise ValueError("`sampler` must be one of: flowmatch_euler, euler, euler_a_rf, euler_ancestral_rf.")
+    if sigma_schedule not in _SUPPORTED_SIGMA_SCHEDULES:
+        raise ValueError("`sigma_schedule` must be one of: beta, uniform, simple, normal.")
+    if sampler == "flowmatch_euler" and sigma_schedule != "uniform":
+        raise ValueError("`flowmatch_euler` requires `sigma_schedule='uniform'`.")
+    if cfg_batch_mode not in _SUPPORTED_CFG_BATCH_MODES:
+        raise ValueError("`cfg_batch_mode` must be one of: split, concat.")
+    if output_type not in _SUPPORTED_OUTPUT_TYPES:
+        raise ValueError("`output_type` must be one of: pil, np.")
+
+
+def _validate_callback_tensor_input_names(
+    *,
+    callback_on_step_end_tensor_inputs: list[str] | None,
+    allowed_inputs: list[str],
+) -> None:
+    if callback_on_step_end_tensor_inputs is None:
+        return
+
+    invalid = [name for name in callback_on_step_end_tensor_inputs if name not in allowed_inputs]
+    if invalid:
+        raise ValueError(
+            "`callback_on_step_end_tensor_inputs` must be a subset of "
+            f"{allowed_inputs}, but got {invalid}."
+        )
 
 
 class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
@@ -103,8 +165,8 @@ class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
         *,
         prompt: PromptInput,
         negative_prompt: PromptInput | None,
-        image: Image.Image | np.ndarray | torch.Tensor | list[Image.Image] | tuple[Image.Image, ...] | None,
-        mask_image: Image.Image | np.ndarray | torch.Tensor | list[Image.Image] | tuple[Image.Image, ...] | None,
+        image: ImageBatchInput | None,
+        mask_image: ImageBatchInput | None,
         strength: float,
         width: int,
         height: int,
@@ -113,7 +175,6 @@ class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
         generator: GeneratorInput | None,
         sampler: str,
         sigma_schedule: str,
-        noise_seed_mode: str,
         cfg_batch_mode: str,
         output_type: str,
         callback_on_step_end_tensor_inputs: list[str] | None = None,
@@ -124,6 +185,7 @@ class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
             num_images_per_prompt=num_images_per_prompt,
         )
         batch_size = len(prompts)
+
         if strength <= 0.0 or strength > 1.0:
             raise ValueError("`strength` must be in (0.0, 1.0].")
         if width < 16 or height < 16:
@@ -136,42 +198,20 @@ class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
             raise ValueError("`mask_image` requires `image`.")
         if image is None and not math.isclose(strength, 1.0):
             raise ValueError("`strength` can be changed only when `image` is provided.")
-        if image is not None and not isinstance(image, (Image.Image, np.ndarray, torch.Tensor, list, tuple)):
-            raise ValueError("`image` must be a PIL image, numpy array, torch tensor, or a list/tuple of PIL images.")
-        if mask_image is not None and not isinstance(mask_image, (Image.Image, np.ndarray, torch.Tensor, list, tuple)):
-            raise ValueError(
-                "`mask_image` must be a PIL image, numpy array, torch tensor, or a list/tuple of PIL images."
-            )
-        if isinstance(image, (list, tuple)):
-            if len(image) == 0:
-                raise ValueError("`image` list/tuple must not be empty.")
-            if not all(isinstance(item, Image.Image) for item in image):
-                raise ValueError("`image` list/tuple must contain only PIL.Image.Image.")
-        if isinstance(mask_image, (list, tuple)):
-            if len(mask_image) == 0:
-                raise ValueError("`mask_image` list/tuple must not be empty.")
-            if not all(isinstance(item, Image.Image) for item in mask_image):
-                raise ValueError("`mask_image` list/tuple must contain only PIL.Image.Image.")
+
+        _validate_image_like_input(image, input_name="image")
+        _validate_image_like_input(mask_image, input_name="mask_image")
         _normalize_generator(generator, batch_size=batch_size)
-        if sampler not in {"flowmatch_euler", "euler", "euler_a_rf", "euler_ancestral_rf"}:
-            raise ValueError("`sampler` must be one of: flowmatch_euler, euler, euler_a_rf, euler_ancestral_rf.")
-        if sigma_schedule not in {"beta", "uniform", "simple", "normal"}:
-            raise ValueError("`sigma_schedule` must be one of: beta, uniform, simple, normal.")
-        if sampler == "flowmatch_euler" and sigma_schedule != "uniform":
-            raise ValueError("`flowmatch_euler` requires `sigma_schedule='uniform'`.")
-        if noise_seed_mode not in {"comfy", "device"}:
-            raise ValueError("`noise_seed_mode` must be one of: comfy, device.")
-        if cfg_batch_mode not in {"split", "concat"}:
-            raise ValueError("`cfg_batch_mode` must be one of: split, concat.")
-        if output_type not in {"pil", "np"}:
-            raise ValueError("`output_type` must be one of: pil, np.")
-        if callback_on_step_end_tensor_inputs is not None:
-            invalid = [name for name in callback_on_step_end_tensor_inputs if name not in self._callback_tensor_inputs]
-            if invalid:
-                raise ValueError(
-                    "`callback_on_step_end_tensor_inputs` must be a subset of "
-                    f"{self._callback_tensor_inputs}, but got {invalid}."
-                )
+        _validate_sampling_modes(
+            sampler=sampler,
+            sigma_schedule=sigma_schedule,
+            cfg_batch_mode=cfg_batch_mode,
+            output_type=output_type,
+        )
+        _validate_callback_tensor_input_names(
+            callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
+            allowed_inputs=self._callback_tensor_inputs,
+        )
 
     @torch.no_grad()
     def __call__(
@@ -179,15 +219,15 @@ class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
         *,
         prompt: PromptInput,
         negative_prompt: PromptInput | None = None,
-        image: Image.Image | np.ndarray | torch.Tensor | list[Image.Image] | tuple[Image.Image, ...] | None = None,
-        mask_image: Image.Image | np.ndarray | torch.Tensor | list[Image.Image] | tuple[Image.Image, ...] | None = None,
+        image: ImageBatchInput | None = None,
+        mask_image: ImageBatchInput | None = None,
         strength: float = 1.0,
         width: int = 1024,
         height: int = 1024,
         num_inference_steps: int = 32,
         num_images_per_prompt: int = 1,
         guidance_scale: float = 4.0,
-        seed: int | None = 42,
+        seed: int | None = None,
         generator: GeneratorInput | None = None,
         sampler: str = "euler_a_rf",
         sigma_schedule: str = "beta",
@@ -195,13 +235,11 @@ class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
         beta_beta: float = FORGE_BETA_BETA,
         eta: float = 1.0,
         s_noise: float = 1.0,
-        noise_seed_mode: str = "comfy",
         cfg_batch_mode: str = "split",
         output_type: str = "pil",
         return_dict: bool = True,
         callback_on_step_end: Any | None = None,
         callback_on_step_end_tensor_inputs: list[str] | None = None,
-        extra_call_kwargs: dict[str, Any] | None = None,
     ) -> AnimaPipelineOutput | tuple[list[Image.Image] | np.ndarray]:
         resolved_callback_tensor_inputs = callback_on_step_end_tensor_inputs
         if resolved_callback_tensor_inputs is None:
@@ -220,7 +258,6 @@ class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
             generator=generator,
             sampler=sampler,
             sigma_schedule=sigma_schedule,
-            noise_seed_mode=noise_seed_mode,
             cfg_batch_mode=cfg_batch_mode,
             output_type=output_type,
             callback_on_step_end_tensor_inputs=resolved_callback_tensor_inputs,
@@ -247,11 +284,9 @@ class AnimaPipeline(DiffusionPipeline, AnimaLoraLoaderMixin):
                 beta_beta=beta_beta,
                 eta=eta,
                 s_noise=s_noise,
-                noise_seed_mode=noise_seed_mode,
                 cfg_batch_mode=cfg_batch_mode,
                 callback_on_step_end=callback_on_step_end,
                 callback_on_step_end_tensor_inputs=resolved_callback_tensor_inputs,
-                extra_call_kwargs=extra_call_kwargs,
             )
         finally:
             self.maybe_free_model_hooks()
@@ -398,26 +433,16 @@ def _create_seed_generators(
     *,
     seed: int,
     model_device: str,
-    mode: str,
 ) -> tuple[torch.Generator, torch.Generator, str]:
     """Create RNGs for initial noise and sampler steps."""
-    if mode == "comfy":
-        init_generator = torch.Generator(device="cpu")
-        init_generator.manual_seed(seed)
+    init_generator = torch.Generator(device="cpu")
+    init_generator.manual_seed(seed)
 
-        step_device = model_device if model_device in {"cuda", "cpu"} else "cpu"
-        step_seed = seed + 1 if step_device == "cpu" else seed
-        step_generator = torch.Generator(device=step_device)
-        step_generator.manual_seed(step_seed)
-        return init_generator, step_generator, "cpu"
-
-    if mode == "device":
-        generator_device = model_device if model_device in {"cuda", "cpu"} else "cpu"
-        generator = torch.Generator(device=generator_device)
-        generator.manual_seed(seed)
-        return generator, generator, generator_device
-
-    raise ValueError(f"Unsupported seed mode: {mode}")
+    step_device = model_device if model_device in {"cuda", "cpu"} else "cpu"
+    step_seed = seed + 1 if step_device == "cpu" else seed
+    step_generator = torch.Generator(device=step_device)
+    step_generator.manual_seed(step_seed)
+    return init_generator, step_generator, "cpu"
 
 
 def _normalize_generator(
@@ -429,35 +454,48 @@ def _normalize_generator(
         return None
 
     if isinstance(generator, (list, tuple)):
-        if batch_size < 1:
-            raise ValueError(f"`batch_size` must be >= 1, got {batch_size}.")
-        if len(generator) != batch_size:
-            raise ValueError(
-                f"`generator` list length must match batch size ({batch_size}), got {len(generator)}."
-            )
-        if len(generator) == 0:
-            return None
-        normalized: list[torch.Generator] = []
-        first_device: str | None = None
-        for item in generator:
-            if not isinstance(item, torch.Generator):
-                raise ValueError("`generator` list items must be torch.Generator instances.")
-            device_type = item.device.type if hasattr(item, "device") else "cpu"
-            if first_device is None:
-                first_device = device_type
-            elif device_type != first_device:
-                raise ValueError(
-                    "`generator` list items must be on the same device type. "
-                    f"Got mixed devices: {first_device}, {device_type}."
-                )
-            normalized.append(item)
-        return normalized
+        return _normalize_generator_sequence(generator, batch_size=batch_size)
 
     if not isinstance(generator, torch.Generator):
         raise ValueError(
             "`generator` must be a torch.Generator or a list/tuple of torch.Generator instances."
         )
     return generator
+
+
+def _generator_device_type(generator: torch.Generator) -> str:
+    return generator.device.type if hasattr(generator, "device") else "cpu"
+
+
+def _normalize_generator_sequence(
+    generators: list[torch.Generator] | tuple[torch.Generator, ...],
+    *,
+    batch_size: int,
+) -> list[torch.Generator] | None:
+    if batch_size < 1:
+        raise ValueError(f"`batch_size` must be >= 1, got {batch_size}.")
+    if len(generators) != batch_size:
+        raise ValueError(
+            f"`generator` list length must match batch size ({batch_size}), got {len(generators)}."
+        )
+    if len(generators) == 0:
+        return None
+
+    normalized: list[torch.Generator] = []
+    first_device: str | None = None
+    for item in generators:
+        if not isinstance(item, torch.Generator):
+            raise ValueError("`generator` list items must be torch.Generator instances.")
+        device_type = _generator_device_type(item)
+        if first_device is None:
+            first_device = device_type
+        elif device_type != first_device:
+            raise ValueError(
+                "`generator` list items must be on the same device type. "
+                f"Got mixed devices: {first_device}, {device_type}."
+            )
+        normalized.append(item)
+    return normalized
 
 
 def _normalize_prompt_list(prompt: PromptInput, *, input_name: str) -> list[str]:
@@ -502,7 +540,7 @@ def _resolve_prompt_batches(
 
     batched_prompts: list[str] = []
     batched_negative_prompts: list[str] = []
-    for text, neg_text in zip(prompts, negative_prompts):
+    for text, neg_text in zip(prompts, negative_prompts, strict=True):
         for _ in range(num_images_per_prompt):
             batched_prompts.append(text)
             batched_negative_prompts.append(neg_text)
@@ -780,13 +818,13 @@ def _resolve_single_file_path(
 
 
 def _strip_net_prefix(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-    if all(key.startswith("net.") for key in state_dict.keys()):
+    if all(key.startswith("net.") for key in state_dict):
         return {key[4:]: value for key, value in state_dict.items()}
     return dict(state_dict)
 
 
 def _strip_model_prefix(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-    if all(key.startswith("model.") for key in state_dict.keys()):
+    if all(key.startswith("model.") for key in state_dict):
         return {key[6:]: value for key, value in state_dict.items()}
     return dict(state_dict)
 
@@ -802,13 +840,7 @@ def _parse_repo_and_subfolder(source: str) -> tuple[str, str | None]:
 
 
 def _config_get_string(config: Any, key: str, default: str) -> str:
-    value: Any | None = None
-    if hasattr(config, "get"):
-        value = config.get(key)
-    elif isinstance(config, dict):
-        value = config.get(key)
-    else:
-        value = getattr(config, key, None)
+    value: Any | None = config.get(key) if hasattr(config, "get") else getattr(config, key, None)
     if value is None:
         return default
     return str(value)
@@ -975,32 +1007,59 @@ def _map_residual_tail(tail: str) -> str | None:
     return None
 
 
-def _convert_anima_vae_key(key: str) -> str:
-    if key.startswith("conv1."):
-        return "quant_conv." + key.split(".", maxsplit=1)[1]
-    if key.startswith("conv2."):
-        return "post_quant_conv." + key.split(".", maxsplit=1)[1]
+def _convert_anima_vae_head_key(key: str, *, prefix: str) -> str | None:
+    if key == f"{prefix}.head.0.gamma":
+        return f"{prefix}.norm_out.gamma"
+    head_prefix = f"{prefix}.head.2."
+    if key.startswith(head_prefix):
+        return f"{prefix}.conv_out.{key.split('.', maxsplit=3)[3]}"
+    return None
 
+
+def _convert_anima_vae_mid_resnet_key(key: str, *, prefix: str, source_index: int, target_index: int) -> str | None:
+    source_prefix = f"{prefix}.middle.{source_index}."
+    if not key.startswith(source_prefix):
+        return None
+    mapped = _ANIMA_VAE_RESIDUAL_KEY_MAP.get(key.removeprefix(source_prefix))
+    if mapped is None:
+        return None
+    return f"{prefix}.mid_block.resnets.{target_index}.{mapped}"
+
+
+def _convert_anima_vae_mid_attention_key(key: str, *, prefix: str) -> str | None:
+    middle_prefix = f"{prefix}.middle.1."
+    if not key.startswith(middle_prefix):
+        return None
+    tail = key.removeprefix(middle_prefix)
+    if tail == "norm.gamma":
+        return f"{prefix}.mid_block.attentions.0.norm.gamma"
+    if tail.startswith(("to_qkv.", "proj.")):
+        return f"{prefix}.mid_block.attentions.0.{tail}"
+    return None
+
+
+def _convert_anima_vae_encoder_key(key: str) -> str | None:
     if key.startswith("encoder.conv1."):
         return "encoder.conv_in." + key.split(".", maxsplit=2)[2]
-    if key == "encoder.head.0.gamma":
-        return "encoder.norm_out.gamma"
-    if key.startswith("encoder.head.2."):
-        return "encoder.conv_out." + key.split(".", maxsplit=3)[3]
-    if key.startswith("encoder.middle.0."):
-        mapped = _ANIMA_VAE_RESIDUAL_KEY_MAP.get(key.removeprefix("encoder.middle.0."))
-        if mapped is not None:
-            return "encoder.mid_block.resnets.0." + mapped
-    if key.startswith("encoder.middle.1."):
-        tail = key.removeprefix("encoder.middle.1.")
-        if tail == "norm.gamma":
-            return "encoder.mid_block.attentions.0.norm.gamma"
-        if tail.startswith(("to_qkv.", "proj.")):
-            return "encoder.mid_block.attentions.0." + tail
-    if key.startswith("encoder.middle.2."):
-        mapped = _ANIMA_VAE_RESIDUAL_KEY_MAP.get(key.removeprefix("encoder.middle.2."))
-        if mapped is not None:
-            return "encoder.mid_block.resnets.1." + mapped
+
+    mapped_head = _convert_anima_vae_head_key(key, prefix="encoder")
+    if mapped_head is not None:
+        return mapped_head
+
+    for source_index, target_index in ((0, 0), (2, 1)):
+        mapped_resnet = _convert_anima_vae_mid_resnet_key(
+            key,
+            prefix="encoder",
+            source_index=source_index,
+            target_index=target_index,
+        )
+        if mapped_resnet is not None:
+            return mapped_resnet
+
+    mapped_attention = _convert_anima_vae_mid_attention_key(key, prefix="encoder")
+    if mapped_attention is not None:
+        return mapped_attention
+
     if key.startswith("encoder.downsamples."):
         rest = key.removeprefix("encoder.downsamples.")
         idx, tail = rest.split(".", maxsplit=1)
@@ -1008,35 +1067,62 @@ def _convert_anima_vae_key(key: str) -> str:
         if mapped is not None:
             return f"encoder.down_blocks.{idx}.{mapped}"
 
+    return None
+
+
+def _convert_anima_vae_decoder_upsample_key(key: str) -> str | None:
+    if not key.startswith("decoder.upsamples."):
+        return None
+
+    rest = key.removeprefix("decoder.upsamples.")
+    idx_text, tail = rest.split(".", maxsplit=1)
+    idx = int(idx_text)
+    mapped = _map_residual_tail(tail)
+    if mapped is not None and idx in _ANIMA_VAE_DECODER_UP_RESNET_MAP:
+        return f"{_ANIMA_VAE_DECODER_UP_RESNET_MAP[idx]}.{mapped}"
+    if idx in _ANIMA_VAE_DECODER_UP_UPSAMPLER_MAP and tail.startswith(("resample.", "time_conv.")):
+        return f"{_ANIMA_VAE_DECODER_UP_UPSAMPLER_MAP[idx]}.{tail}"
+    return None
+
+
+def _convert_anima_vae_decoder_key(key: str) -> str | None:
     if key.startswith("decoder.conv1."):
         return "decoder.conv_in." + key.split(".", maxsplit=2)[2]
-    if key == "decoder.head.0.gamma":
-        return "decoder.norm_out.gamma"
-    if key.startswith("decoder.head.2."):
-        return "decoder.conv_out." + key.split(".", maxsplit=3)[3]
-    if key.startswith("decoder.middle.0."):
-        mapped = _ANIMA_VAE_RESIDUAL_KEY_MAP.get(key.removeprefix("decoder.middle.0."))
-        if mapped is not None:
-            return "decoder.mid_block.resnets.0." + mapped
-    if key.startswith("decoder.middle.1."):
-        tail = key.removeprefix("decoder.middle.1.")
-        if tail == "norm.gamma":
-            return "decoder.mid_block.attentions.0.norm.gamma"
-        if tail.startswith(("to_qkv.", "proj.")):
-            return "decoder.mid_block.attentions.0." + tail
-    if key.startswith("decoder.middle.2."):
-        mapped = _ANIMA_VAE_RESIDUAL_KEY_MAP.get(key.removeprefix("decoder.middle.2."))
-        if mapped is not None:
-            return "decoder.mid_block.resnets.1." + mapped
-    if key.startswith("decoder.upsamples."):
-        rest = key.removeprefix("decoder.upsamples.")
-        idx_text, tail = rest.split(".", maxsplit=1)
-        idx = int(idx_text)
-        mapped = _map_residual_tail(tail)
-        if mapped is not None and idx in _ANIMA_VAE_DECODER_UP_RESNET_MAP:
-            return f"{_ANIMA_VAE_DECODER_UP_RESNET_MAP[idx]}.{mapped}"
-        if idx in _ANIMA_VAE_DECODER_UP_UPSAMPLER_MAP and tail.startswith(("resample.", "time_conv.")):
-            return f"{_ANIMA_VAE_DECODER_UP_UPSAMPLER_MAP[idx]}.{tail}"
+
+    mapped_head = _convert_anima_vae_head_key(key, prefix="decoder")
+    if mapped_head is not None:
+        return mapped_head
+
+    for source_index, target_index in ((0, 0), (2, 1)):
+        mapped_resnet = _convert_anima_vae_mid_resnet_key(
+            key,
+            prefix="decoder",
+            source_index=source_index,
+            target_index=target_index,
+        )
+        if mapped_resnet is not None:
+            return mapped_resnet
+
+    mapped_attention = _convert_anima_vae_mid_attention_key(key, prefix="decoder")
+    if mapped_attention is not None:
+        return mapped_attention
+
+    return _convert_anima_vae_decoder_upsample_key(key)
+
+
+def _convert_anima_vae_key(key: str) -> str:
+    if key.startswith("conv1."):
+        return "quant_conv." + key.split(".", maxsplit=1)[1]
+    if key.startswith("conv2."):
+        return "post_quant_conv." + key.split(".", maxsplit=1)[1]
+
+    mapped_encoder = _convert_anima_vae_encoder_key(key)
+    if mapped_encoder is not None:
+        return mapped_encoder
+
+    mapped_decoder = _convert_anima_vae_decoder_key(key)
+    if mapped_decoder is not None:
+        return mapped_decoder
 
     raise KeyError(key)
 
@@ -1243,7 +1329,7 @@ def _prepare_condition_inputs(
     t5_weights = torch.zeros((batch_size, max_t5_len, 1), dtype=torch.float32, device=runtime.execution_device)
 
     for idx, (qwen_ids_item, t5_ids_item, t5_weights_item) in enumerate(
-        zip(qwen_token_batches, t5_token_batches, t5_weight_batches)
+        zip(qwen_token_batches, t5_token_batches, t5_weight_batches, strict=True)
     ):
         q_len = len(qwen_ids_item)
         t_len = len(t5_ids_item)
@@ -1305,14 +1391,13 @@ def _reshape_image_tensor_to_bchw(
                 f"`{input_label}` must have channel size 1 or 3. Got shape {tuple(tensor.shape)}."
             )
     elif tensor.ndim == 4:
-        if tensor.shape[1] in {1, 3}:
-            pass
-        elif tensor.shape[-1] in {1, 3}:
-            tensor = tensor.permute(0, 3, 1, 2)
-        else:
-            raise ValueError(
-                f"`{input_label}` must have channel size 1 or 3. Got shape {tuple(tensor.shape)}."
-            )
+        if tensor.shape[1] not in {1, 3}:
+            if tensor.shape[-1] in {1, 3}:
+                tensor = tensor.permute(0, 3, 1, 2)
+            else:
+                raise ValueError(
+                    f"`{input_label}` must have channel size 1 or 3. Got shape {tuple(tensor.shape)}."
+                )
     else:
         raise ValueError(f"`{input_label}` must be 2D/3D/4D. Got shape {tuple(tensor.shape)}.")
 
@@ -1345,7 +1430,7 @@ def _normalize_tensor_to_unit_interval(
 
 
 def _prepare_init_image_tensor(
-    image: Image.Image | np.ndarray | torch.Tensor | list[Image.Image] | tuple[Image.Image, ...],
+    image: ImageBatchInput,
     *,
     width: int,
     height: int,
@@ -1353,13 +1438,18 @@ def _prepare_init_image_tensor(
     if isinstance(image, (list, tuple)):
         if len(image) == 0:
             raise ValueError("`image` list/tuple must not be empty.")
-        pil_tensors: list[torch.Tensor] = []
+        batch_tensors: list[torch.Tensor] = []
         for item in image:
-            if not isinstance(item, Image.Image):
-                raise ValueError("`image` list/tuple must contain only PIL.Image.Image.")
-            pil_image = item.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
-            pil_tensors.append(torch.from_numpy(np.array(pil_image, copy=True)).permute(2, 0, 1).unsqueeze(0))
-        tensor = torch.cat(pil_tensors, dim=0)
+            if isinstance(item, (list, tuple)):
+                raise ValueError("Nested list/tuple in `image` is not supported.")
+            batch_tensors.append(
+                _prepare_init_image_tensor(
+                    item,
+                    width=width,
+                    height=height,
+                )
+            )
+        tensor = torch.cat(batch_tensors, dim=0)
     elif isinstance(image, Image.Image):
         pil_image = image.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
         tensor = torch.from_numpy(np.array(pil_image, copy=True)).permute(2, 0, 1).unsqueeze(0)
@@ -1384,7 +1474,7 @@ def _prepare_init_image_tensor(
 
 
 def _prepare_inpaint_mask_tensor(
-    mask_image: Image.Image | np.ndarray | torch.Tensor | list[Image.Image] | tuple[Image.Image, ...],
+    mask_image: ImageBatchInput,
     *,
     width: int,
     height: int,
@@ -1394,10 +1484,15 @@ def _prepare_inpaint_mask_tensor(
             raise ValueError("`mask_image` list/tuple must not be empty.")
         mask_tensors: list[torch.Tensor] = []
         for item in mask_image:
-            if not isinstance(item, Image.Image):
-                raise ValueError("`mask_image` list/tuple must contain only PIL.Image.Image.")
-            pil_mask = item.convert("L").resize((width, height), Image.Resampling.LANCZOS)
-            mask_tensors.append(torch.from_numpy(np.array(pil_mask, copy=True)).unsqueeze(0).unsqueeze(0))
+            if isinstance(item, (list, tuple)):
+                raise ValueError("Nested list/tuple in `mask_image` is not supported.")
+            mask_tensors.append(
+                _prepare_inpaint_mask_tensor(
+                    item,
+                    width=width,
+                    height=height,
+                )
+            )
         mask = torch.cat(mask_tensors, dim=0)
     elif isinstance(mask_image, Image.Image):
         pil_mask = mask_image.convert("L").resize((width, height), Image.Resampling.LANCZOS)
@@ -1941,6 +2036,46 @@ def _sample_euler_ancestral_rf_const(
     return latents
 
 
+def _warn_unsupported_vae_feature(feature_name: str) -> None:
+    warnings.warn(f"{feature_name} is not supported by this VAE.", stacklevel=2)
+
+
+def _enable_vae_method(
+    vae: AutoencoderKLQwenImage,
+    *,
+    enabled: bool,
+    method_name: str,
+    unsupported_feature_name: str,
+) -> None:
+    if not enabled:
+        return
+
+    method = getattr(vae, method_name, None)
+    if method is None:
+        _warn_unsupported_vae_feature(unsupported_feature_name)
+        return
+    method()
+
+
+def _enable_vae_xformers_if_available(
+    vae: AutoencoderKLQwenImage,
+    *,
+    enabled: bool,
+) -> None:
+    if not enabled:
+        return
+
+    method = getattr(vae, "set_use_memory_efficient_attention_xformers", None)
+    if method is None:
+        _warn_unsupported_vae_feature("VAE xformers")
+        return
+
+    try:
+        method(True)
+    except (AttributeError, ImportError, RuntimeError, TypeError, ValueError) as exc:
+        warnings.warn(f"Failed to enable VAE xformers attention: {exc}", stacklevel=2)
+
+
 def _configure_vae_runtime_features(
     vae: AutoencoderKLQwenImage,
     *,
@@ -1948,24 +2083,22 @@ def _configure_vae_runtime_features(
     enable_vae_tiling: bool,
     enable_vae_xformers: bool,
 ) -> None:
-    if enable_vae_slicing:
-        if hasattr(vae, "enable_slicing"):
-            vae.enable_slicing()
-        else:
-            warnings.warn("VAE slicing is not supported by this VAE.", stacklevel=2)
-    if enable_vae_tiling:
-        if hasattr(vae, "enable_tiling"):
-            vae.enable_tiling()
-        else:
-            warnings.warn("VAE tiling is not supported by this VAE.", stacklevel=2)
-    if enable_vae_xformers:
-        if hasattr(vae, "set_use_memory_efficient_attention_xformers"):
-            try:
-                vae.set_use_memory_efficient_attention_xformers(True)
-            except Exception as exc:
-                warnings.warn(f"Failed to enable VAE xformers attention: {exc}", stacklevel=2)
-        else:
-            warnings.warn("VAE xformers is not supported by this VAE.", stacklevel=2)
+    _enable_vae_method(
+        vae,
+        enabled=enable_vae_slicing,
+        method_name="enable_slicing",
+        unsupported_feature_name="VAE slicing",
+    )
+    _enable_vae_method(
+        vae,
+        enabled=enable_vae_tiling,
+        method_name="enable_tiling",
+        unsupported_feature_name="VAE tiling",
+    )
+    _enable_vae_xformers_if_available(
+        vae,
+        enabled=enable_vae_xformers,
+    )
 
 
 def _apply_runtime_options_to_loaded_pipeline(
@@ -2101,47 +2234,10 @@ def _build_anima_pipeline(
     return runtime
 
 
-def _apply_extra_sampling_kwargs(
-    *,
-    sampler: str,
-    sigma_schedule: str,
-    beta_alpha: float,
-    beta_beta: float,
-    eta: float,
-    s_noise: float,
-    noise_seed_mode: str,
-    cfg_batch_mode: str,
-    extra_call_kwargs: dict[str, Any] | None,
-) -> tuple[str, str, float, float, float, float, str, str]:
-    if not extra_call_kwargs:
-        return (
-            sampler,
-            sigma_schedule,
-            beta_alpha,
-            beta_beta,
-            eta,
-            s_noise,
-            noise_seed_mode,
-            cfg_batch_mode,
-        )
-
-    return (
-        str(extra_call_kwargs.get("sampler", sampler)),
-        str(extra_call_kwargs.get("sigma_schedule", sigma_schedule)),
-        float(extra_call_kwargs.get("beta_alpha", beta_alpha)),
-        float(extra_call_kwargs.get("beta_beta", beta_beta)),
-        float(extra_call_kwargs.get("eta", eta)),
-        float(extra_call_kwargs.get("s_noise", s_noise)),
-        str(extra_call_kwargs.get("noise_seed_mode", noise_seed_mode)),
-        str(extra_call_kwargs.get("cfg_batch_mode", cfg_batch_mode)),
-    )
-
-
 def _resolve_noise_runtime(
     *,
     execution_device: str,
     seed: int | None,
-    noise_seed_mode: str,
     generator: GeneratorInput | None,
     batch_size: int,
 ) -> tuple[
@@ -2150,9 +2246,6 @@ def _resolve_noise_runtime(
     str,
     torch.dtype,
 ]:
-    if noise_seed_mode not in {"comfy", "device"}:
-        raise ValueError("noise_seed_mode must be one of: comfy, device.")
-
     init_generator: torch.Generator | list[torch.Generator] | None = None
     step_generator: torch.Generator | list[torch.Generator] | None = None
     noise_device = execution_device
@@ -2166,14 +2259,10 @@ def _resolve_noise_runtime(
             generator_device = provided_generator.device.type if hasattr(provided_generator, "device") else "cpu"
         return provided_generator, provided_generator, generator_device, noise_dtype
 
-    if noise_seed_mode == "comfy":
-        noise_device = "cpu"
-
     if seed is not None:
         init_generator, step_generator, noise_device = _create_seed_generators(
             seed=seed,
             model_device=execution_device,
-            mode=noise_seed_mode,
         )
 
     return init_generator, step_generator, noise_device, noise_dtype
@@ -2346,20 +2435,89 @@ def _sample_const_sigma_samplers(
     )
 
 
+def _prepare_init_image_latents_and_inpaint_mask(
+    pipe: AnimaPipeline,
+    *,
+    image: ImageBatchInput | None,
+    mask_image: ImageBatchInput | None,
+    width: int,
+    height: int,
+    latent_h: int,
+    latent_w: int,
+    batch_size: int,
+    init_generator: torch.Generator | list[torch.Generator] | None,
+    sample_dtype: torch.dtype,
+) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    if image is None:
+        return None, None
+
+    init_image_tensor = _prepare_init_image_tensor(
+        image,
+        width=width,
+        height=height,
+    )
+    init_image_tensor = _align_tensor_batch_size(
+        init_image_tensor,
+        target_batch_size=batch_size,
+        input_name="image",
+    )
+    with _module_execution_context(
+        pipe.vae,
+        execution_device=pipe.execution_device,
+        execution_dtype=pipe.model_dtype,
+        enable_offload=pipe.use_module_cpu_offload,
+    ):
+        init_image_latents = _encode_image_to_latents(
+            pipe,
+            image_tensor=init_image_tensor,
+            generator=init_generator,
+            sample_dtype=sample_dtype,
+        )
+    init_image_latents = init_image_latents.to(device=pipe.execution_device, dtype=sample_dtype)
+
+    if tuple(init_image_latents.shape[-2:]) != (latent_h, latent_w):
+        raise RuntimeError(
+            "Encoded image latent shape does not match target resolution. "
+            f"Expected {(latent_h, latent_w)}, got {tuple(init_image_latents.shape[-2:])}."
+        )
+
+    if mask_image is None:
+        return init_image_latents, None
+
+    mask_tensor = _prepare_inpaint_mask_tensor(
+        mask_image,
+        width=width,
+        height=height,
+    )
+    mask_latents = torch.nn.functional.interpolate(
+        mask_tensor,
+        size=(latent_h, latent_w),
+        mode="nearest",
+    )
+    inpaint_mask = mask_latents.to(device=pipe.execution_device, dtype=sample_dtype).unsqueeze(2)
+    inpaint_mask = inpaint_mask.repeat(1, init_image_latents.shape[1], 1, 1, 1)
+    inpaint_mask = _align_tensor_batch_size(
+        inpaint_mask,
+        target_batch_size=batch_size,
+        input_name="mask_image",
+    )
+    return init_image_latents, inpaint_mask
+
+
 def _generate_image(
     pipe: AnimaPipeline,
     *,
     prompt: PromptInput,
     negative_prompt: PromptInput | None = None,
-    image: Image.Image | np.ndarray | torch.Tensor | list[Image.Image] | tuple[Image.Image, ...] | None = None,
-    mask_image: Image.Image | np.ndarray | torch.Tensor | list[Image.Image] | tuple[Image.Image, ...] | None = None,
+    image: ImageBatchInput | None = None,
+    mask_image: ImageBatchInput | None = None,
     strength: float = 1.0,
     width: int = 1024,
     height: int = 1024,
     num_inference_steps: int = 32,
     num_images_per_prompt: int = 1,
     guidance_scale: float = 4.0,
-    seed: int | None = 42,
+    seed: int | None = None,
     generator: GeneratorInput | None = None,
     sampler: str = "euler_a_rf",
     sigma_schedule: str = "beta",
@@ -2367,11 +2525,9 @@ def _generate_image(
     beta_beta: float = FORGE_BETA_BETA,
     eta: float = 1.0,
     s_noise: float = 1.0,
-    noise_seed_mode: str = "comfy",
     cfg_batch_mode: str = "split",
     callback_on_step_end: Any | None = None,
     callback_on_step_end_tensor_inputs: list[str] | None = None,
-    extra_call_kwargs: dict[str, Any] | None = None,
 ) -> list[Image.Image]:
     if num_inference_steps < 1:
         raise ValueError("num_inference_steps must be >= 1")
@@ -2382,27 +2538,6 @@ def _generate_image(
     )
     batch_size = len(prompts)
 
-    (
-        sampler,
-        sigma_schedule,
-        beta_alpha,
-        beta_beta,
-        eta,
-        s_noise,
-        noise_seed_mode,
-        cfg_batch_mode,
-    ) = _apply_extra_sampling_kwargs(
-        sampler=sampler,
-        sigma_schedule=sigma_schedule,
-        beta_alpha=beta_alpha,
-        beta_beta=beta_beta,
-        eta=eta,
-        s_noise=s_noise,
-        noise_seed_mode=noise_seed_mode,
-        cfg_batch_mode=cfg_batch_mode,
-        extra_call_kwargs=extra_call_kwargs,
-    )
-
     height, width, latent_h, latent_w = _latent_hw(height=height, width=width, vae_scale_factor=8)
     sample_dtype = torch.float32
 
@@ -2410,7 +2545,6 @@ def _generate_image(
     init_generator, step_generator, noise_device, noise_dtype = _resolve_noise_runtime(
         execution_device=pipe.execution_device,
         seed=seed,
-        noise_seed_mode=noise_seed_mode,
         generator=generator,
         batch_size=batch_size,
     )
@@ -2424,55 +2558,18 @@ def _generate_image(
     inpaint_mask: torch.Tensor | None = None
     init_noise: torch.Tensor | None = None
 
-    if image is not None:
-        init_image_tensor = _prepare_init_image_tensor(
-            image,
-            width=width,
-            height=height,
-        )
-        init_image_tensor = _align_tensor_batch_size(
-            init_image_tensor,
-            target_batch_size=batch_size,
-            input_name="image",
-        )
-        with _module_execution_context(
-            pipe.vae,
-            execution_device=pipe.execution_device,
-            execution_dtype=pipe.model_dtype,
-            enable_offload=pipe.use_module_cpu_offload,
-        ):
-            init_image_latents = _encode_image_to_latents(
-                pipe,
-                image_tensor=init_image_tensor,
-                generator=init_generator,
-                sample_dtype=sample_dtype,
-            )
-        init_image_latents = init_image_latents.to(device=pipe.execution_device, dtype=sample_dtype)
-
-        if tuple(init_image_latents.shape[-2:]) != (latent_h, latent_w):
-            raise RuntimeError(
-                "Encoded image latent shape does not match target resolution. "
-                f"Expected {(latent_h, latent_w)}, got {tuple(init_image_latents.shape[-2:])}."
-            )
-
-        if mask_image is not None:
-            mask_tensor = _prepare_inpaint_mask_tensor(
-                mask_image,
-                width=width,
-                height=height,
-            )
-            mask_latents = torch.nn.functional.interpolate(
-                mask_tensor,
-                size=(latent_h, latent_w),
-                mode="nearest",
-            )
-            inpaint_mask = mask_latents.to(device=pipe.execution_device, dtype=sample_dtype).unsqueeze(2)
-            inpaint_mask = inpaint_mask.repeat(1, init_image_latents.shape[1], 1, 1, 1)
-            inpaint_mask = _align_tensor_batch_size(
-                inpaint_mask,
-                target_batch_size=batch_size,
-                input_name="mask_image",
-            )
+    init_image_latents, inpaint_mask = _prepare_init_image_latents_and_inpaint_mask(
+        pipe,
+        image=image,
+        mask_image=mask_image,
+        width=width,
+        height=height,
+        latent_h=latent_h,
+        latent_w=latent_w,
+        batch_size=batch_size,
+        init_generator=init_generator,
+        sample_dtype=sample_dtype,
+    )
 
     flowmatch_timesteps: torch.Tensor | None = None
     sigmas: torch.Tensor | None = None
