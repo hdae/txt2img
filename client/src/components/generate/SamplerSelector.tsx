@@ -19,7 +19,10 @@ export const SamplerSelector = () => {
         "euler_a",
         "dpm++_2m",
     ]
-    const defaultSampler = serverInfo?.parameter_schema?.defaults?.sampler ?? "euler_a"
+    const defaultSampler =
+        (serverInfo?.parameter_schema?.properties?.sampler?.default as string | undefined) ??
+        serverInfo?.parameter_schema?.defaults?.sampler ??
+        "euler_a"
 
     // Display names for samplers
     const samplerNames: Record<string, string> = {

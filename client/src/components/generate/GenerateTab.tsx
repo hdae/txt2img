@@ -2,6 +2,8 @@
  * GenerateTab - Main generation interface with responsive layout
  */
 
+import { useEffect } from "react"
+
 import { Box, Button, Flex, Grid, Spinner, Text } from "@radix-ui/themes"
 import { Sparkles } from "lucide-react"
 
@@ -16,15 +18,46 @@ import { SeedInput } from "@/components/generate/SeedInput"
 import { SizeSelector } from "@/components/generate/SizeSelector"
 import { useGenerate } from "@/hooks/useGenerate"
 import { useServerInfo } from "@/hooks/useServerInfo"
+import { useGenerateStore } from "@/stores/generateStore"
 
 export const GenerateTab = () => {
     const { data: serverInfo, isLoading: isLoadingInfo } = useServerInfo()
     const { generate, job } = useGenerate()
+    const setCfgScale = useGenerateStore((state) => state.setCfgScale)
+    const setSampler = useGenerateStore((state) => state.setSampler)
+    const setSize = useGenerateStore((state) => state.setSize)
 
     const isSDXL = serverInfo?.parameter_schema?.model_type === "sdxl"
     const hasNegativePrompt = serverInfo?.parameter_schema?.properties?.negative_prompt !== undefined
     const hasSampler = serverInfo?.parameter_schema?.properties?.sampler !== undefined
     const hasCfgScale = serverInfo?.parameter_schema?.properties?.cfg_scale !== undefined
+
+    useEffect(() => {
+        if (!serverInfo) return
+
+        const schema = serverInfo.parameter_schema
+        const widthDefault = (schema.properties?.width?.default as number | undefined) ?? 1024
+        const heightDefault = (schema.properties?.height?.default as number | undefined) ?? 1024
+        const cfgDefault =
+            (schema.properties?.cfg_scale?.default as number | undefined) ??
+            schema.defaults?.cfg_scale ??
+            schema.fixed?.cfg_scale ??
+            7.0
+        const samplerDefault =
+            (schema.properties?.sampler?.default as string | undefined) ??
+            schema.defaults?.sampler ??
+            "euler_a"
+
+        setSize(widthDefault, heightDefault)
+        setCfgScale(cfgDefault)
+        setSampler(samplerDefault)
+    }, [
+        serverInfo?.model_name,
+        serverInfo?.parameter_schema?.model_type,
+        setCfgScale,
+        setSampler,
+        setSize,
+    ])
 
     // Disable button until completed or failed (or idle)
     const isButtonDisabled = job.status === "queued" || job.status === "processing"

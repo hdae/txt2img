@@ -184,11 +184,11 @@ class AnimaPipelineImpl(BasePipeline):
         if progress_callback:
             def _callback_fn(pipe, step, timestep, callback_kwargs):
                 asyncio.run_coroutine_threadsafe(
-                    progress_callback(step, None),
+                    progress_callback(step + 1, None),
                     loop
                 )
                 return callback_kwargs
-            
+
             step_callback = _callback_fn
 
         def _run_pipeline():
@@ -204,7 +204,7 @@ class AnimaPipelineImpl(BasePipeline):
                 }
                 if step_callback:
                     kwargs["callback_on_step_end"] = step_callback
-                
+
                 return self.pipe(**kwargs)
 
         logger.info("Calling Anima pipeline...")

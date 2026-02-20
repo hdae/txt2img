@@ -68,7 +68,7 @@ export interface ServerInfo {
 // =============================================================================
 
 type PromptStyle = "tags" | "natural"
-type ModelType = "sdxl" | "chroma" | "flux_dev" | "flux_schnell" | "zimage"
+type ModelType = "sdxl" | "chroma" | "flux_dev" | "flux_schnell" | "zimage" | "anima"
 
 interface PropertySchema {
     type: string | string[]
@@ -88,14 +88,15 @@ interface PropertySchema {
 export interface ParameterSchema {
     model_type: ModelType
     prompt_style: PromptStyle
-    defaults: {
-        cfg_scale: number
-        sampler: string
-        steps: number
+    defaults?: {
+        cfg_scale?: number
+        sampler?: string
+        steps?: number
     }
     properties: Record<string, PropertySchema>
     required: string[]
     fixed: {
         steps: number
+        cfg_scale?: number
     }
 }

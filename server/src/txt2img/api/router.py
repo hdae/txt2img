@@ -1,6 +1,7 @@
 """API router."""
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -27,6 +28,64 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
+def _resolve_cfg_scale(request_cfg_scale: float | None, schema: dict[str, Any]) -> float:
+    """Resolve cfg_scale using pipeline schema defaults and range."""
+    defaults = schema.get("defaults", {})
+    properties = schema.get("properties", {})
+    cfg_schema = properties.get("cfg_scale")
+
+    default_cfg = defaults.get("cfg_scale", 7.0)
+    if isinstance(cfg_schema, dict):
+        default_cfg = cfg_schema.get("default", default_cfg)
+
+    value = request_cfg_scale if request_cfg_scale is not None else default_cfg
+    try:
+        resolved = float(value)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=422, detail="Invalid cfg_scale value") from e
+
+    if isinstance(cfg_schema, dict):
+        minimum = cfg_schema.get("minimum")
+        maximum = cfg_schema.get("maximum")
+        if isinstance(minimum, (int, float)) and resolved < float(minimum):
+            raise HTTPException(
+                status_code=422,
+                detail=f"cfg_scale must be >= {minimum}",
+            )
+        if isinstance(maximum, (int, float)) and resolved > float(maximum):
+            raise HTTPException(
+                status_code=422,
+                detail=f"cfg_scale must be <= {maximum}",
+            )
+
+    return resolved
+
+
+def _resolve_sampler(request_sampler: str | None, schema: dict[str, Any]) -> str:
+    """Resolve sampler using pipeline schema defaults and enum."""
+    defaults = schema.get("defaults", {})
+    properties = schema.get("properties", {})
+    sampler_schema = properties.get("sampler")
+
+    default_sampler = defaults.get("sampler", "euler_a")
+    if isinstance(sampler_schema, dict):
+        default_sampler = sampler_schema.get("default", default_sampler)
+
+    resolved = request_sampler if request_sampler is not None else default_sampler
+    if not isinstance(resolved, str) or not resolved:
+        raise HTTPException(status_code=422, detail="Invalid sampler value")
+
+    if isinstance(sampler_schema, dict):
+        enum_values = sampler_schema.get("enum")
+        if isinstance(enum_values, list) and enum_values and resolved not in enum_values:
+            raise HTTPException(
+                status_code=422,
+                detail=f"sampler must be one of: {', '.join(enum_values)}",
+            )
+
+    return resolved
+
+
 @router.post(
     "/generate",
     response_model=GenerateResponse,
@@ -49,13 +108,17 @@ async def generate_image(request: GenerateRequest) -> GenerateResponse:
             for lora in request.loras
         ]
 
+    schema = get_pipeline().get_parameter_schema()
+    resolved_cfg_scale = _resolve_cfg_scale(request.cfg_scale, schema)
+    resolved_sampler = _resolve_sampler(request.sampler, schema)
+
     params = GenerationParams(
         prompt=request.prompt,
         negative_prompt=request.negative_prompt,
         width=request.width,
         height=request.height,
-        cfg_scale=request.cfg_scale,
-        sampler=request.sampler,
+        cfg_scale=resolved_cfg_scale,
+        sampler=resolved_sampler,
         seed=request.seed,
         loras=loras_list,
     )

@@ -13,7 +13,15 @@ export const CfgScaleSlider = () => {
     const setCfgScale = useGenerateStore((state) => state.setCfgScale)
     const { data: serverInfo } = useServerInfo()
 
-    const defaultValue = serverInfo?.parameter_schema?.defaults?.cfg_scale ?? 7.0
+    const cfgScaleSchema = serverInfo?.parameter_schema?.properties?.cfg_scale
+    const defaultValue =
+        (cfgScaleSchema?.default as number | undefined) ??
+        serverInfo?.parameter_schema?.defaults?.cfg_scale ??
+        serverInfo?.parameter_schema?.fixed?.cfg_scale ??
+        7.0
+    const min = (cfgScaleSchema?.minimum as number | undefined) ?? 0
+    const max = (cfgScaleSchema?.maximum as number | undefined) ?? 15
+    const step = (cfgScaleSchema?.step as number | undefined) ?? 0.5
 
     return (
         <Flex direction="column" justify="between" style={{ height: 60 }}>
@@ -30,9 +38,9 @@ export const CfgScaleSlider = () => {
                 <Slider
                     value={[cfgScale]}
                     onValueChange={([value]) => setCfgScale(value)}
-                    min={0}
-                    max={15}
-                    step={0.5}
+                    min={min}
+                    max={max}
+                    step={step}
                     size="1"
                     style={{ flex: 1 }}
                 />

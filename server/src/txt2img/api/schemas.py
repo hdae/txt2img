@@ -30,8 +30,16 @@ class GenerateRequest(BaseModel):
     negative_prompt: str = Field(default="", description="Negative prompt (SDXL only)")
     width: int = Field(default=1024, ge=256, le=2048, description="Image width")
     height: int = Field(default=1024, ge=256, le=2048, description="Image height")
-    cfg_scale: float = Field(default=7.0, ge=0.0, le=15.0, description="CFG Scale (prompt adherence)")
-    sampler: str = Field(default="euler_a", description="Sampling method")
+    cfg_scale: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=30.0,
+        description="CFG Scale (model-dependent, null uses model default)",
+    )
+    sampler: str | None = Field(
+        default=None,
+        description="Sampling method (model-dependent, null uses model default)",
+    )
     seed: int | None = Field(default=None, description="Random seed (null for random)")
     loras: list[LoraRequest] | None = Field(default=None, description="LoRAs to apply (SDXL only)")
 
