@@ -1,0 +1,25 @@
+.git
+.gitignore
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Runtime outputs / caches
+outputs/
+models/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+server/.venv/
+
+# Keep only built frontend assets in image context
+client/node_modules/
+client/src/
+client/public/
+
+# Local-only files not needed for release image
+docker-compose.yml
+start.sh

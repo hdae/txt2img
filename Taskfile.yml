@@ -63,3 +63,27 @@ tasks:
       - docker compose down
       - docker volume rm {{.COMPOSE_PROJECT_NAME}}_app-data || true
       - echo "✓ Reset complete. Run 'task up' to restart."
+
+  deploy.build:
+    desc: Build release Docker image with latest + commit ID tags (no compose)
+    preconditions:
+      - sh: test -d client/dist
+        msg: client/dist not found. Build client first (e.g. cd client && pnpm build)
+    cmds:
+      - >
+        docker build -f Dockerfile
+        -t ${IMAGE_REPO:-hdae/txt2img}:latest
+        -t ${IMAGE_REPO:-hdae/txt2img}:$(git rev-parse --short=7 HEAD)
+        .
+
+  deploy.run:
+    desc: Run release image locally (no compose)
+    cmds:
+      - >
+        docker run --rm -p ${PORT:-8000}:8000
+        -e CONFIG=${CONFIG:-sdxl/illustrious}
+        -e VRAM_PROFILE=${VRAM_PROFILE:-full}
+        -e OUTPUT_FORMAT=${OUTPUT_FORMAT:-png}
+        -e CIVITAI_API_KEY=${CIVITAI_API_KEY:-}
+        -e HF_TOKEN=${HF_TOKEN:-}
+        ${IMAGE:-hdae/txt2img:latest}
