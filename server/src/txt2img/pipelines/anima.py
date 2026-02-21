@@ -20,8 +20,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_ANIMA_MODEL = "circlestone-labs/Anima::split_files/diffusion_models/anima-preview.safetensors"
 
 # Default params based on Anima's recommendations
-ANIMA_DEFAULT_STEPS = 32
+ANIMA_DEFAULT_STEPS = 20
 ANIMA_DEFAULT_CFG_SCALE = 4.0
+
+CFG_BATCH_MODE_SPLIT = "split"
+CFG_BATCH_MODE_CONCAT = "concat"
 
 
 class AnimaPipelineImpl(BasePipeline):
@@ -31,6 +34,7 @@ class AnimaPipelineImpl(BasePipeline):
         self.pipe: AnimaPipeline | None = None
         self._model_name: str = ""
         self.loaded_loras: list[str] = []
+        self._cfg_batch_mode: str = CFG_BATCH_MODE_SPLIT
 
     @property
     def model_name(self) -> str:
@@ -88,6 +92,8 @@ class AnimaPipelineImpl(BasePipeline):
         config = get_model_config()
         settings = get_settings()
 
+        self._configure_sdpa_backends()
+
         model_ref = config.model if config.model else DEFAULT_ANIMA_MODEL
 
         logger.info(f"Loading Anima model: {model_ref}")
@@ -115,9 +121,28 @@ class AnimaPipelineImpl(BasePipeline):
         # Apply VRAM profile
         from txt2img.config import get_vram_profile
 
-        self._apply_vram_profile(get_vram_profile())
+        profile = get_vram_profile()
+        self._apply_vram_profile(profile)
+        self._apply_cfg_batch_mode_override(config.cfg_batch_mode, source="preset")
+        self._apply_cfg_batch_mode_override(settings.anima_cfg_batch_mode, source="env")
+        logger.info(f"Anima CFG batch mode: {self._cfg_batch_mode}")
 
         logger.info(f"Anima model loaded: {self._model_name}")
+
+    def _configure_sdpa_backends(self) -> None:
+        """Enable SDPA backends for CUDA attention kernels."""
+        if not torch.cuda.is_available():
+            return
+
+        torch.backends.cuda.enable_flash_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        torch.backends.cuda.enable_math_sdp(True)
+        logger.info(
+            "SDPA backends enabled: flash=%s, mem_efficient=%s, math=%s",
+            torch.backends.cuda.flash_sdp_enabled(),
+            torch.backends.cuda.mem_efficient_sdp_enabled(),
+            torch.backends.cuda.math_sdp_enabled(),
+        )
 
     def _apply_vram_profile(self, profile: VramProfile) -> None:
         """Apply VRAM optimization based on profile."""
@@ -128,12 +153,14 @@ class AnimaPipelineImpl(BasePipeline):
 
         if profile == VramProfile.FULL:
             self.pipe = self.pipe.to("cuda")
+            self._cfg_batch_mode = CFG_BATCH_MODE_CONCAT
             logger.info("VRAM profile: FULL - no offloading")
 
         elif profile == VramProfile.BALANCED:
             self.pipe.enable_model_cpu_offload()
             if hasattr(self.pipe, "vae") and hasattr(self.pipe.vae, "enable_tiling"):
                 self.pipe.vae.enable_tiling()
+            self._cfg_batch_mode = CFG_BATCH_MODE_SPLIT
             logger.info("VRAM profile: BALANCED - model offload + VAE tiling")
 
         elif profile == VramProfile.LOWVRAM:
@@ -152,7 +179,31 @@ class AnimaPipelineImpl(BasePipeline):
 
             if hasattr(self.pipe, "vae") and hasattr(self.pipe.vae, "enable_tiling"):
                 self.pipe.vae.enable_tiling()
+            self._cfg_batch_mode = CFG_BATCH_MODE_SPLIT
             logger.info("VRAM profile: LOWVRAM - group/sequential offload + VAE tiling")
+
+    def _apply_cfg_batch_mode_override(
+        self,
+        mode_override: str | None,
+        *,
+        source: str,
+    ) -> None:
+        """Apply optional override for Anima CFG batch mode."""
+        if not mode_override:
+            return
+
+        normalized = mode_override.strip().lower()
+        if normalized in {CFG_BATCH_MODE_SPLIT, CFG_BATCH_MODE_CONCAT}:
+            self._cfg_batch_mode = normalized
+            logger.info(f"Applied cfg_batch_mode override from {source}: {normalized}")
+            return
+
+        logger.warning(
+            "Invalid cfg_batch_mode override from %s ('%s'), using %s",
+            source,
+            mode_override,
+            self._cfg_batch_mode,
+        )
 
     async def generate(
         self,
@@ -169,7 +220,8 @@ class AnimaPipelineImpl(BasePipeline):
 
         logger.info(
             f"Starting Anima generation: "
-            f"prompt={params.prompt[:50]}, steps={steps}, cfg={cfg_scale}"
+            f"prompt={params.prompt[:50]}, steps={steps}, cfg={cfg_scale}, "
+            f"cfg_batch_mode={self._cfg_batch_mode}"
         )
 
         seed = params.seed if params.seed is not None else random.randint(0, 2**32 - 1)
@@ -201,6 +253,7 @@ class AnimaPipelineImpl(BasePipeline):
                     "num_inference_steps": steps,
                     "guidance_scale": cfg_scale,
                     "generator": generator,
+                    "cfg_batch_mode": self._cfg_batch_mode,
                 }
                 if step_callback:
                     kwargs["callback_on_step_end"] = step_callback

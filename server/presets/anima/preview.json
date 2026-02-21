@@ -1,7 +1,8 @@
 {
   "type": "anima",
   "model": "circlestone-labs/Anima::split_files/diffusion_models/anima-preview.safetensors",
-  "default_steps": 32,
+  "default_steps": 20,
   "default_cfg": 4.0,
-  "training_resolution": 1024
+  "training_resolution": 1024,
+  "cfg_batch_mode": "concat"
 }

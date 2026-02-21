@@ -22,7 +22,9 @@
 | **Flux Dev**     | 50    | 3.5       | -       |
 | **Flux Schnell** | 4     | 0.0       | -       |
 | **Z-Image**      | 8     | 0.0       | -       |
-| **Anima**        | 32    | 4.0       | -       |
+| **Anima**        | 20    | 4.0       | -       |
+
+Anima のプリセットでは `cfg_batch_mode` に `concat` / `split` を設定できます。
 
 ## VRAM プロファイル
 

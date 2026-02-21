@@ -23,7 +23,9 @@ performance. These cannot be changed via the API.
 | **Flux Dev**     | 50    | 3.5       | -       |
 | **Flux Schnell** | 4     | 0.0       | -       |
 | **Z-Image**      | 8     | 0.0       | -       |
-| **Anima**        | 32    | 4.0       | -       |
+| **Anima**        | 20    | 4.0       | -       |
+
+For Anima presets, you can also set `cfg_batch_mode` to `concat` or `split`.
 
 ## VRAM Profiles
 

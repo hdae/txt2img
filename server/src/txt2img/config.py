@@ -89,6 +89,7 @@ class ModelConfig:
     default_cfg: float = 7.0
     default_sampler: str = "euler"
     rng_source: str = "cuda"  # "cuda" for Forge compatibility, "cpu" for Diffusers default
+    cfg_batch_mode: str | None = None  # Anima CFG batching mode: "split" or "concat"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ModelConfig":
@@ -118,6 +119,7 @@ class ModelConfig:
             "default_steps": self.default_steps,
             "default_cfg": self.default_cfg,
             "default_sampler": self.default_sampler,
+            "cfg_batch_mode": self.cfg_batch_mode,
         }
 
 
@@ -162,6 +164,11 @@ class Settings(BaseSettings):
     # Output format (overrides preset value)
     output_format: str | None = Field(
         default=None, description="Output format: png or webp"
+    )
+
+    # Anima-specific performance tuning
+    anima_cfg_batch_mode: str | None = Field(
+        default=None, description="Anima CFG batch mode override: split or concat"
     )
 
     # Server settings
