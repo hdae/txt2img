@@ -2,7 +2,7 @@
 name = "txt2img"
 version = "0.1.0"
 description = "Text-to-Image generation service using Diffusers"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.127.0",
     "uvicorn[standard]>=0.40.0",
@@ -16,7 +16,6 @@ dependencies = [
     "httpx>=0.28.1",
     "pillow>=12.0.0",
     "sse-starlette>=3.0.4",
-    "compel>=2.3.1",
     "PyYAML>=6.0.3",
     "torchao>=0.15.0",
     "peft>=0.18.0",
@@ -66,4 +65,4 @@ known-first-party = ["txt2img"]
 
 [tool.uv.sources]
 diffusers = { git = "https://github.com/huggingface/diffusers", rev = "main" }
-diffusers-anima = { path = "vendor/diffusers-anima" }
+diffusers-anima = { git = "https://github.com/hdae/diffusers-anima" }

@@ -13,7 +13,6 @@ WORKDIR /workspace/app
 COPY --chown=app:app server/pyproject.toml server/uv.lock ./server/
 COPY --chown=app:app server/src ./server/src
 COPY --chown=app:app server/presets ./server/presets
-COPY --chown=app:app server/vendor ./server/vendor
 COPY --chown=app:app client/dist ./client/dist
 
 RUN uv sync --project /workspace/app/server --frozen

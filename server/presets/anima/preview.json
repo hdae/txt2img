@@ -1,6 +1,6 @@
 {
   "type": "anima",
-  "model": "circlestone-labs/Anima::split_files/diffusion_models/anima-preview.safetensors",
+  "model": "hdae/diffusers-anima-preview",
   "default_steps": 20,
   "default_cfg": 4.0,
   "training_resolution": 1024,

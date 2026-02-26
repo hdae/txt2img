@@ -17,7 +17,7 @@ from txt2img.core.job_queue import GenerationParams
 logger = logging.getLogger(__name__)
 
 # Fixed default model if no model string is given in config
-DEFAULT_ANIMA_MODEL = "circlestone-labs/Anima::split_files/diffusion_models/anima-preview.safetensors"
+DEFAULT_ANIMA_MODEL = "hdae/diffusers-anima-preview"
 
 # Default params based on Anima's recommendations
 ANIMA_DEFAULT_STEPS = 20

@@ -15,6 +15,12 @@ env:
   PGID: "{{.PGID}}"
 
 tasks:
+  start.anima:
+    desc: Start server locally with anima/preview preset (uv, no Docker)
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - CONFIG=anima/preview uv run --project server python -m txt2img.main
+
   up:
     desc: Start the container
     deps: [create-volume]
