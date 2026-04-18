@@ -7,7 +7,7 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      - UV_CACHE_DIR=/workspace/.uv-cache
+      - UV_CACHE_DIR=/opt/uv-cache
       - PYTHON_VERSION=${PYTHON_VERSION:-3.12}
       - CONFIG=${CONFIG:-sdxl/illustrious}
       - VRAM_PROFILE=${VRAM_PROFILE:-full}
@@ -19,7 +19,7 @@ services:
       - PORT=8000
     volumes:
       - app-data:/workspace
-      - uv-cache:/workspace/.uv-cache
+      - uv-cache:/opt/uv-cache
       - ./start.sh:/start.sh
       - .:/workspace/app
     working_dir: /workspace/app

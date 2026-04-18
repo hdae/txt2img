@@ -9,8 +9,8 @@ set -euo pipefail
 # - installed Python via uv
 # - created/activated /workspace/.venv
 
-APP_DIR="${APP_DIR:-/workspace}"
-PROJECT_DIR="${APP_DIR}/app"
+WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace}"
+PROJECT_DIR="${WORKSPACE_DIR}/app"
 SERVER_DIR="${PROJECT_DIR}/server"
 
 clone_or_update() {
@@ -21,7 +21,7 @@ clone_or_update() {
     if [ -d "$target_dir/.git" ]; then
         echo "Updating $target_dir to $ref..."
         cd "$target_dir"
-        git fetch origin --quiet
+        git fetch origin --tags --prune --quiet
         git checkout "$ref" --quiet
         git reset --hard "origin/$ref" 2>/dev/null || git reset --hard "$ref"
         cd - >/dev/null

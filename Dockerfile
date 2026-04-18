@@ -1,8 +1,7 @@
 FROM hdae/ai-base:latest
 
-ENV APP_DIR=/workspace \
-    PROJECT_ROOT=/workspace/app \
-    UV_CACHE_DIR=/workspace/.uv-cache \
+ENV PROJECT_ROOT=/workspace/app \
+    UV_CACHE_DIR=/opt/uv-cache \
     PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
     PORT=8000
