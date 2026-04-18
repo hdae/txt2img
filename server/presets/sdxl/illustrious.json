@@ -1,7 +1,7 @@
 {
     "$schema": "../config.schema.json",
     "type": "sdxl",
-    "model": "urn:air:sdxl:checkpoint:civitai:827184@1469915",
+    "model": "urn:air:sdxl:checkpoint:civitai:827184@2514310",
     "vae": null,
     "loras": [],
     "training_resolution": 1024,
